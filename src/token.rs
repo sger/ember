@@ -1,3 +1,5 @@
+use std::fmt::write;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Literals
@@ -66,6 +68,9 @@ pub enum Token {
     // Definition
     Def,
     End,
+    Import,
+    Module,
+    Use,
 
     // Delimiters
     LBracket, // [
@@ -183,6 +188,9 @@ impl std::fmt::Display for Token {
             Token::Debug => write!(f, "debug"),
             Token::Def => write!(f, "def"),
             Token::End => write!(f, "end"),
+            Token::Import => write!(f, "import"),
+            Token::Module => write!(f, "module"),
+            Token::Use => write!(f, "use"),
             Token::LBracket => write!(f, "["),
             Token::RBracket => write!(f, "]"),
             Token::LBrace => write!(f, "{{"),

@@ -1,10 +1,13 @@
+mod ast;
 mod lexer;
+mod parser;
 mod token;
 mod token_dumper;
 
 use std::{env, fs};
 
 use lexer::Lexer;
+use parser::Parser;
 use token_dumper::TokenDumper;
 
 fn main() {
@@ -23,8 +26,7 @@ fn main() {
                 if tokens_only {
                     dump_tokens(&source, no_color, pretty);
                 } else {
-                    println!("run program");
-                    // later: parse + execute
+                    run_program(&source);
                 }
             }
             Err(e) => {
@@ -76,4 +78,25 @@ options:
   --no-color   disable ANSI colors
 "
     );
+}
+
+fn run_program(source: &str) {
+    let mut lexer = Lexer::new(source);
+    let tokens = match lexer.tokenize() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Lexer error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Parse
+    let mut parser = Parser::new(tokens);
+    let program = match parser.parse() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            std::process::exit(1);
+        }
+    };
 }
