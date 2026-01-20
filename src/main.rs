@@ -1,13 +1,13 @@
 mod ast;
 mod lexer;
 mod parser;
+mod parser_error;
 mod token;
 mod token_dumper;
 
-use std::{env, fs};
-
 use lexer::Lexer;
 use parser::Parser;
+use std::{env, fs};
 use token_dumper::TokenDumper;
 
 fn main() {

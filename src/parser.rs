@@ -1,25 +1,7 @@
 use crate::ast::{Node, Program, UseItem, Value};
 use crate::lexer::Spanned;
+use crate::parser_error::ParserError;
 use crate::token::Token;
-
-/// A parsing error with source location.
-///
-/// `line` and `col` are 1-based positions coming from the lexer spans.
-/// For EOF-ish errors (e.g. missing `end`, `]`, `}`), the parser will use the
-/// last consumed token's span as a fallback so locations are never `0:0`.
-#[derive(Debug)]
-pub struct ParseError {
-    pub message: String,
-    pub line: usize,
-    pub col: usize,
-}
-
-impl std::fmt::Display for ParseError {
-    /// Formats as `line:col: message` for CLI-friendly diagnostics.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}: {}", self.line, self.col, self.message)
-    }
-}
 
 /// Recursive-descent parser for Ember.
 ///
@@ -90,29 +72,29 @@ impl Parser {
         self.tokens.get(self.pos + 1).map(|s| &s.token)
     }
 
-    /// Constructs a `ParseError` at the most relevant location.
+    /// Constructs a `ParserError` at the most relevant location.
     ///
     /// Priority:
     /// 1. If `current()` exists, use its span.
     /// 2. Else, use `last_span` (e.g. after consuming EOF or falling off the end).
     /// 3. Else, default to (1,1) for truly empty input.
-    fn error(&self, message: &str) -> ParseError {
+    fn error(&self, message: &str) -> ParserError {
         if let Some(spanned) = self.current() {
-            ParseError {
+            ParserError {
                 message: message.to_string(),
                 line: spanned.span.line,
                 col: spanned.span.col,
             }
         } else if let Some(span) = &self.last_span {
             // We fell off the end (or are past EOF). Use last known location.
-            ParseError {
+            ParserError {
                 message: message.to_string(),
                 line: span.line,
                 col: span.col,
             }
         } else {
             // Empty input case
-            ParseError {
+            ParserError {
                 message: message.to_string(),
                 line: 1,
                 col: 1,
@@ -127,7 +109,7 @@ impl Parser {
     /// - `main`: everything else
     ///
     /// The parser stops when it reaches `Token::Eof`.
-    pub fn parse(&mut self) -> Result<Program, ParseError> {
+    pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut definitions = Vec::new();
         let mut main = Vec::new();
 
@@ -174,7 +156,7 @@ impl Parser {
     /// # Errors
     /// - If `<name>` is missing or not an identifier.
     /// - If EOF is reached before `end`.
-    fn parse_definition(&mut self) -> Result<Node, ParseError> {
+    fn parse_definition(&mut self) -> Result<Node, ParserError> {
         self.advance(); // consume 'def'
 
         let name = match self.advance() {
@@ -214,7 +196,7 @@ impl Parser {
     ///
     /// # Errors
     /// - If the path is missing or not a string literal.
-    fn parse_import(&mut self) -> Result<Node, ParseError> {
+    fn parse_import(&mut self) -> Result<Node, ParserError> {
         self.advance(); // consume 'import'
 
         match self.advance() {
@@ -239,7 +221,7 @@ impl Parser {
     /// the parser sees another `module` or EOF, or when it hits non-definition code.
     ///
     /// Returns `Node::Module { name, definitions }`.
-    fn parse_module(&mut self) -> Result<Node, ParseError> {
+    fn parse_module(&mut self) -> Result<Node, ParserError> {
         self.advance(); // consume 'module'
 
         let name = match self.advance() {
@@ -285,7 +267,7 @@ impl Parser {
     /// - Missing module identifier
     /// - Missing `.` after module name
     /// - Missing item identifier or `*`
-    fn parse_use(&mut self) -> Result<Node, ParseError> {
+    fn parse_use(&mut self) -> Result<Node, ParserError> {
         self.advance(); // consume 'use'
 
         let module = match self.advance() {
@@ -328,7 +310,7 @@ impl Parser {
     /// - `Ident "." Ident` becomes `Node::QualifiedWord { module, word }`
     /// - otherwise the initial `Ident` becomes `Node::Word(name)` and `.` (if any)
     ///   is handled later as `Node::StringConcat`.
-    fn parse_node(&mut self) -> Result<Node, ParseError> {
+    fn parse_node(&mut self) -> Result<Node, ParserError> {
         let spanned = self.current().ok_or_else(|| self.error("unexpected EOF"))?;
 
         let node = match &spanned.token {
@@ -596,7 +578,7 @@ impl Parser {
     /// # Errors
     /// - Unexpected token inside the list
     /// - EOF before `}`
-    fn parse_list(&mut self) -> Result<Value, ParseError> {
+    fn parse_list(&mut self) -> Result<Value, ParserError> {
         self.advance(); // consume '{'
 
         let mut items = Vec::new();
@@ -652,7 +634,7 @@ impl Parser {
     ///
     /// # Errors
     /// - EOF before `]`
-    fn parse_quotation(&mut self) -> Result<Value, ParseError> {
+    fn parse_quotation(&mut self) -> Result<Value, ParserError> {
         self.advance(); // consume '['
 
         let mut body = Vec::new();
@@ -687,7 +669,7 @@ mod tests {
         parser.parse().unwrap()
     }
 
-    fn parse_err(source: &str) -> ParseError {
+    fn parse_err(source: &str) -> ParserError {
         let mut lexer = Lexer::new(source);
         let tokens = lexer.tokenize().unwrap();
         let mut parser = Parser::new(tokens);
