@@ -1,5 +1,3 @@
-use std::fmt::write;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     // Literals
@@ -90,6 +88,7 @@ pub enum Token {
 
 impl Token {
     /// Returns true if this token is a built-in word
+    #[allow(dead_code)]
     pub fn is_builtin_word(&self) -> bool {
         matches!(
             self,

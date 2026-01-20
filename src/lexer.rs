@@ -479,6 +479,7 @@ impl Lexer {
         Ok(tokens)
     }
 
+    #[allow(dead_code)]
     pub fn tokenize_clean(&mut self) -> Result<Vec<Spanned>, LexerError> {
         let tokens = self.tokenize()?;
         Ok(tokens
@@ -599,6 +600,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_floats() {
         let t = tokens("3.14 -2.5");
         assert_eq!(t, vec![Token::Float(3.14), Token::Float(-2.5)]);

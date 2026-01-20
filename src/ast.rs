@@ -65,6 +65,7 @@ impl std::fmt::Display for Value {
 /// Each `Node` represents a single executable or structural element
 /// in an Ember program.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum Node {
     // ───────────────────────────── Literals ─────────────────────────────
     /// Push a literal value onto the stack.
@@ -388,6 +389,7 @@ pub enum UseItem {
 
 /// Parsed Ember program.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Program {
     /// Top-level definitions.
     pub definitions: Vec<Node>,
