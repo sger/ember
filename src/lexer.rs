@@ -314,6 +314,9 @@ impl Lexer {
             // Definition
             "def" => Token::Def,
             "end" => Token::End,
+            "import" => Token::Import,
+            "module" => Token::Module,
+            "use" => Token::Use,
 
             // User-defined word
             _ => Token::Ident(ident),

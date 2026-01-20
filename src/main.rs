@@ -16,6 +16,7 @@ fn main() {
     let tokens_only = args.contains(&"--tokens".to_string());
     let no_color = args.contains(&"--no-color".to_string());
     let pretty = args.contains(&"--pretty".to_string());
+    let ast = args.contains(&"--ast".to_string());
 
     // first non-flag argument is the filename
     let filename = args.iter().skip(1).find(|a| !a.starts_with('-'));
@@ -26,7 +27,7 @@ fn main() {
                 if tokens_only {
                     dump_tokens(&source, no_color, pretty);
                 } else {
-                    run_program(&source);
+                    run_program(&source, filename, ast);
                 }
             }
             Err(e) => {
@@ -68,19 +69,18 @@ fn dump_tokens(source: &str, no_color: bool, pretty: bool) {
 }
 
 fn print_usage() {
-    println!(
-        "usage:
-  program <file> [options]
-
-options:
-  --tokens     dump lexer tokens
-  --pretty     nicer token output (no Debug formatting)
-  --no-color   disable ANSI colors
-"
-    );
+    println!("EMBER - Concatenative Functional Programming Language");
+    println!();
+    println!("Usage:");
+    println!("  ember                     Run demo examples");
+    println!("  ember <file.em>           Run a program");
+    println!("  ember --repl, -i          Start interactive REPL");
+    println!("  ember --tokens <file>     Show tokens only");
+    println!("  ember --bc <file.em>      Run using bytecode VM (with stack checker)");
+    println!("  ember --help, -h          Show this help");
 }
 
-fn run_program(source: &str) {
+fn run_program(source: &str, filename: &str, ast: bool) {
     let mut lexer = Lexer::new(source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
@@ -99,4 +99,10 @@ fn run_program(source: &str) {
             std::process::exit(1);
         }
     };
+
+    // print ast only
+    if ast {
+        println!("AST (entry): {}", filename);
+        println!("{:#?}", program);
+    }
 }

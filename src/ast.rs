@@ -10,8 +10,6 @@
 //! - `{ ... }` denotes an Ember list literal.
 //! - `[ ... ]` denotes an Ember quotation (anonymous function).
 
-use crate::ast::Node;
-
 /// Runtime value in the Ember language.
 ///
 /// Values are the only data that can exist on the Ember data stack.
