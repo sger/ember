@@ -2,13 +2,17 @@ mod ast;
 mod lexer;
 mod parser;
 mod parser_error;
+mod runtime_error;
 mod token;
 mod token_dumper;
+mod vm;
 
 use lexer::Lexer;
 use parser::Parser;
 use std::{env, fs};
 use token_dumper::TokenDumper;
+
+use crate::vm::VM;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -104,5 +108,13 @@ fn run_program(source: &str, filename: &str, ast: bool) {
     if ast {
         println!("AST (entry): {}", filename);
         println!("{:#?}", program);
+    }
+
+    let mut vm = VM::new();
+    vm.set_current_dir(std::path::Path::new(filename));
+
+    if let Err(e) = vm.load(&program) {
+        eprintln!("Runtime error: {}", e);
+        std::process::exit(1);
     }
 }
