@@ -630,6 +630,42 @@ impl VM {
     }
 
     fn handle_use(&mut self, module: &str, item: &UseItem) -> Result<(), RuntimeError> {
+        match item {
+            UseItem::Single(word) => {
+                let qualified = format!("{}.{}", module, word);
+                if !self.words.contains_key(&qualified) {
+                    return Err(RuntimeError::new(&format!(
+                        "undefined: {}.{}",
+                        module, word
+                    )));
+                }
+                self.aliases.insert(word.clone(), qualified);
+            }
+            UseItem::All => {
+                let prefix = format!("{}.", module);
+                let to_alias: Vec<(String, String)> = self
+                    .words
+                    .keys()
+                    .filter(|k| k.starts_with(&prefix))
+                    .map(|qualified| {
+                        let word = qualified.strip_prefix(&prefix).unwrap().to_string();
+                        (word, qualified.clone())
+                    })
+                    .collect();
+
+                if to_alias.is_empty() {
+                    return Err(RuntimeError::new(&format!(
+                        "no definitions found in module '{}'",
+                        module
+                    )));
+                }
+
+                for (word, qualified) in to_alias {
+                    self.aliases.insert(word, qualified);
+                }
+            }
+        }
+
         Ok(())
     }
 }
