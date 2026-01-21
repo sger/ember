@@ -12,7 +12,8 @@ use parser::Parser;
 use std::{env, fs, path::Path};
 use token_dumper::TokenDumper;
 
-use crate::vm::VM;
+use crate::vm::vm::VM;
+use crate::vm::vm_bc::VmBc;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

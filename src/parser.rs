@@ -1,4 +1,7 @@
-use crate::ast::{Node, Program, UseItem, Value};
+use crate::ast::node::Node;
+use crate::ast::program::Program;
+use crate::ast::use_item::UseItem;
+use crate::ast::value::Value;
 use crate::lexer::Spanned;
 use crate::parser_error::ParserError;
 use crate::token::Token;

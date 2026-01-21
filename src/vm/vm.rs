@@ -1,4 +1,7 @@
-use crate::ast::{Node, Program, UseItem, Value};
+use crate::ast::node::Node;
+use crate::ast::program::Program;
+use crate::ast::use_item::UseItem;
+use crate::ast::value::Value;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::runtime_error::RuntimeError;
@@ -82,7 +85,7 @@ impl VM {
         }
     }
 
-    pub fn words_snapshot(&self) -> std::collections::HashMap<String, Vec<crate::ast::Node>> {
+    pub fn words_snapshot(&self) -> std::collections::HashMap<String, Vec<Node>> {
         self.words.clone()
     }
 
