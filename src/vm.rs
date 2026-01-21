@@ -609,6 +609,23 @@ impl VM {
         module_name: &str,
         definitions: &[Node],
     ) -> Result<(), RuntimeError> {
+        for def in definitions {
+            if let Node::Def {
+                name: word_name,
+                body,
+            } = def
+            {
+                // Register with qualified name (Module.word)
+                let qualified = format!("{}.{}", module_name, word_name);
+                self.words.insert(qualified.clone(), body.clone());
+
+                // Also register with unqualified name for intra-module calls
+                // (can be overridden by later definitions or use statements)
+                if !self.words.contains_key(word_name) {
+                    self.words.insert(word_name.clone(), body.clone());
+                }
+            }
+        }
         Ok(())
     }
 
