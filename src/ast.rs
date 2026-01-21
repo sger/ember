@@ -376,6 +376,26 @@ pub enum Node {
 
     /// Import another Ember source file.
     Import(String),
+
+    // Concatenative Combinators
+    /// ( a quot -- ...results... a ) - execute quot with top hidden
+    Dip,
+    /// ( a quot -- ...results... a ) - execute quot, preserve input
+    Keep,
+    /// ( a p q -- p(a) q(a) ) - apply two quotations to same value
+    Bi,
+    /// ( a b p q -- p(a,b) q(a,b) ) - apply two quotations to two values
+    Bi2,
+    /// ( a p q r -- p(a) q(a) r(a) ) - apply three quotations to same value
+    Tri,
+    /// ( a b quot -- quot(a) quot(b) ) - apply same quotation to two values
+    Both,
+    /// ( quot1 quot2 -- combined ) - concatenate two quotations
+    Compose,
+    /// ( value quot -- curried ) - partial application
+    Curry,
+    /// ( list quot -- results ) - apply quotation to list as arguments
+    Apply,
 }
 
 /// Item selection in a `use` statement.

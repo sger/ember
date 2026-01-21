@@ -100,6 +100,17 @@ pub enum Token {
     // Identifier (user-defined word)
     Ident(std::string::String),
 
+    // Concatenative Combinators
+    Dip,
+    Keep,
+    Bi,
+    Bi2,
+    Tri,
+    Both,
+    Compose,
+    Curry,
+    Apply,
+
     // Special
     Comment(std::string::String),
     Newline,
@@ -172,6 +183,15 @@ impl Token {
                 | Token::Type
                 | Token::ToString
                 | Token::ToInt
+                | Token::Dip
+                | Token::Keep
+                | Token::Bi
+                | Token::Bi2
+                | Token::Tri
+                | Token::Both
+                | Token::Compose
+                | Token::Curry
+                | Token::Apply
         )
     }
 }
@@ -255,6 +275,15 @@ impl std::fmt::Display for Token {
             Token::Ident(s) => write!(f, "{}", s),
             Token::Comment(s) => write!(f, "; {}", s),
             Token::Newline => write!(f, "\\n"),
+            Token::Dip => write!(f, "dip"),
+            Token::Keep => write!(f, "keep"),
+            Token::Bi => write!(f, "bi"),
+            Token::Bi2 => write!(f, "bi2"),
+            Token::Tri => write!(f, "tri"),
+            Token::Both => write!(f, "both"),
+            Token::Compose => write!(f, "compose"),
+            Token::Curry => write!(f, "curry"),
+            Token::Apply => write!(f, "apple"),
             Token::Eof => write!(f, "EOF"),
         }
     }

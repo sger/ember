@@ -745,6 +745,94 @@ impl VM {
                 result.map_err(|e| e.with_context(&qualified))?;
             }
 
+            // Concatenative Combinators
+            Node::Dip => {
+                // Execute quotation with top of stack temporarily hidden
+                let quot = self.pop_quotation()?;
+                let saved = self.pop()?;
+                self.execute(&quot)?;
+                self.push(saved);
+            }
+            Node::Keep => {
+                // Execute quotation but preserve the input value
+                let quot = self.pop_quotation()?;
+                let a = self.pop()?;
+                self.push(a.clone());
+                self.execute(&quot)?;
+                self.push(a);
+            }
+            Node::Bi => {
+                // Apply two quotations to the same value
+                let q = self.pop_quotation()?;
+                let p = self.pop_quotation()?;
+                let a = self.pop()?;
+                self.push(a.clone());
+                self.execute(&p)?;
+                self.push(a);
+                self.execute(&q)?;
+            }
+            Node::Bi2 => {
+                // Apply two quotations to two values
+                let q = self.pop_quotation()?;
+                let p = self.pop_quotation()?;
+                let b = self.pop()?;
+                let a = self.pop()?;
+                self.push(a.clone());
+                self.push(b.clone());
+                self.execute(&p)?;
+                self.push(a);
+                self.push(b);
+                self.execute(&q)?;
+            }
+            Node::Tri => {
+                // Apply three quotations to the same value
+                let r = self.pop_quotation()?;
+                let q = self.pop_quotation()?;
+                let p = self.pop_quotation()?;
+                let a = self.pop()?;
+                self.push(a.clone());
+                self.execute(&p)?;
+                self.push(a.clone());
+                self.execute(&q)?;
+                self.push(a);
+                self.execute(&r)?;
+            }
+            Node::Both => {
+                // Apply the same quotation to two values
+                let quot = self.pop_quotation()?;
+                let b = self.pop()?;
+                let a = self.pop()?;
+                self.push(a);
+                self.execute(&quot)?;
+                self.push(b);
+                self.execute(&quot)?;
+            }
+            Node::Compose => {
+                // Create a new quotation that runs quot1 then quot2
+                let q2 = self.pop_quotation()?;
+                let q1 = self.pop_quotation()?;
+                let mut combined = q1;
+                combined.extend(q2);
+                self.push(Value::Quotation(combined));
+            }
+            Node::Curry => {
+                // Create a new quotation with value baked in at the front
+                let quot = self.pop_quotation()?;
+                let value = self.pop()?;
+                let mut curried = vec![Node::Literal(value)];
+                curried.extend(quot);
+                self.push(Value::Quotation(curried));
+            }
+            Node::Apply => {
+                // Push all list elements onto stack, then execute quotation
+                let quot = self.pop_quotation()?;
+                let args = self.pop_list()?;
+                for arg in args {
+                    self.push(arg);
+                }
+                self.execute(&quot)?;
+            }
+
             // Definition (shouldn't be executed directly)
             Node::Def { .. } => {}
 
@@ -1212,5 +1300,135 @@ mod tests {
 
         let stack = run_get_stack(r#""123" to-int"#);
         assert_eq!(stack, vec![Value::Integer(123)]);
+    }
+
+    #[test]
+    fn test_dip() {
+        let stack = run_get_stack("1 2 [3 +] dip");
+        assert_eq!(stack, vec![Value::Integer(4), Value::Integer(2)]);
+
+        let stack = run_get_stack("10 20 [5 *] dip");
+        assert_eq!(stack, vec![Value::Integer(50), Value::Integer(20)]);
+    }
+
+    #[test]
+    fn test_keep() {
+        // keep: execute quotation, but preserve original value
+        let stack = run_get_stack("5 [dup *] keep");
+        assert_eq!(stack, vec![Value::Integer(25), Value::Integer(5)]);
+
+        let stack = run_get_stack("10 [2 /] keep");
+        assert_eq!(stack, vec![Value::Integer(5), Value::Integer(10)]);
+    }
+
+    #[test]
+    fn test_bi() {
+        // bi: apply two quotations to same value
+        let stack = run_get_stack("5 [2 +] [3 *] bi");
+        assert_eq!(stack, vec![Value::Integer(7), Value::Integer(15)]);
+
+        let stack = run_get_stack("100 [10 /] [1 +] bi");
+        assert_eq!(stack, vec![Value::Integer(10), Value::Integer(101)]);
+    }
+
+    #[test]
+    fn test_bi2() {
+        // bi2: apply two quotations to two values
+        let stack = run_get_stack("3 4 [+] [*] bi2");
+        assert_eq!(stack, vec![Value::Integer(7), Value::Integer(12)]);
+
+        // Compare two numbers: get both difference and ratio
+        let stack = run_get_stack("10 2 [-] [/] bi2");
+        assert_eq!(stack, vec![Value::Integer(8), Value::Integer(5)]);
+    }
+
+    #[test]
+    fn test_tri() {
+        // tri: apply three quotations to same value
+        let stack = run_get_stack("10 [1 +] [2 *] [dup *] tri");
+        assert_eq!(
+            stack,
+            vec![
+                Value::Integer(11),  // 10 + 1
+                Value::Integer(20),  // 10 * 2
+                Value::Integer(100), // 10 * 10
+            ]
+        );
+    }
+
+    #[test]
+    fn test_both() {
+        // both: apply same quotation to two values
+        let stack = run_get_stack("3 4 [dup *] both");
+        assert_eq!(stack, vec![Value::Integer(9), Value::Integer(16)]);
+
+        // Square two numbers
+        let stack = run_get_stack("5 12 [dup *] both");
+        assert_eq!(stack, vec![Value::Integer(25), Value::Integer(144)]);
+    }
+
+    #[test]
+    fn test_compose() {
+        // compose: create combined quotation
+        let stack = run_get_stack("[2 +] [3 *] compose 5 swap call");
+        assert_eq!(stack, vec![Value::Integer(21)]); // (5 + 2) * 3 = 21
+
+        // Order matters: first quot runs first
+        let stack = run_get_stack("[3 *] [2 +] compose 5 swap call");
+        assert_eq!(stack, vec![Value::Integer(17)]); // (5 * 3) + 2 = 17
+    }
+
+    #[test]
+    fn test_curry() {
+        // curry: partial application
+        let stack = run_get_stack("10 [+] curry 5 swap call");
+        assert_eq!(stack, vec![Value::Integer(15)]); // 5 + 10 = 15
+
+        // Curry a multiplier
+        let stack = run_get_stack("3 [*] curry 7 swap call");
+        assert_eq!(stack, vec![Value::Integer(21)]); // 7 * 3 = 21
+    }
+
+    #[test]
+    fn test_apply() {
+        // apply: use list as arguments
+        let stack = run_get_stack("{ 3 4 } [+] apply");
+        assert_eq!(stack, vec![Value::Integer(7)]);
+
+        // Multiple operations: 2 3 4 -> (3 + 4) * 2 = 14
+        let stack = run_get_stack("{ 2 3 4 } [+ *] apply");
+        assert_eq!(stack, vec![Value::Integer(14)]);
+    }
+
+    #[test]
+    fn test_combinator_composition() {
+        // Combine combinators for more complex patterns
+        // cleave pattern: apply multiple quotations, collect results
+        let stack = run_get_stack("10 [1 +] [2 *] [3 -] tri");
+        assert_eq!(
+            stack,
+            vec![Value::Integer(11), Value::Integer(20), Value::Integer(7),]
+        );
+
+        // Pythagorean: 3² + 4² = 25
+        let stack = run_get_stack("3 4 [dup *] both +");
+        assert_eq!(stack, vec![Value::Integer(25)]);
+    }
+
+    #[test]
+    fn test_curry_with_filter() {
+        // Create a "greater than 5" filter using curry
+        let stack = run_get_stack("{ 1 3 5 7 9 } 5 [>] curry filter");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![Value::Integer(7), Value::Integer(9),])]
+        );
+    }
+
+    #[test]
+    fn test_compose_pipeline() {
+        // Build a processing pipeline: add 1, then double
+        let stack = run_get_stack("[1 +] [2 *] compose 10 swap call");
+        assert_eq!(stack, vec![Value::Integer(22)]); // (10 + 1) * 2 = 22
     }
 }

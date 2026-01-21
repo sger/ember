@@ -339,6 +339,17 @@ impl Lexer {
             "module" => Token::Module,
             "use" => Token::Use,
 
+            // Concatenative Combinators
+            "dip" => Token::Dip,
+            "keep" => Token::Keep,
+            "bi" => Token::Bi,
+            "bi2" => Token::Bi2,
+            "tri" => Token::Tri,
+            "both" => Token::Both,
+            "compose" => Token::Compose,
+            "curry" => Token::Curry,
+            "apply" => Token::Apply,
+
             // User-defined word
             _ => Token::Ident(ident),
         }

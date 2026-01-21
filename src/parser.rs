@@ -602,6 +602,44 @@ impl Parser {
                 Node::ToInt
             }
 
+            // Concatenative Combinators
+            Token::Dip => {
+                self.advance();
+                Node::Dip
+            }
+            Token::Keep => {
+                self.advance();
+                Node::Keep
+            }
+            Token::Bi => {
+                self.advance();
+                Node::Bi
+            }
+            Token::Bi2 => {
+                self.advance();
+                Node::Bi2
+            }
+            Token::Tri => {
+                self.advance();
+                Node::Tri
+            }
+            Token::Both => {
+                self.advance();
+                Node::Both
+            }
+            Token::Compose => {
+                self.advance();
+                Node::Compose
+            }
+            Token::Curry => {
+                self.advance();
+                Node::Curry
+            }
+            Token::Apply => {
+                self.advance();
+                Node::Apply
+            }
+
             // User-defined word
             Token::Ident(name) => {
                 let name = name.clone();
