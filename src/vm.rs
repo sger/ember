@@ -746,4 +746,83 @@ mod tests {
         let stack = run_get_stack("def square dup * end 5 square");
         assert_eq!(stack, vec![Value::Integer(25)]);
     }
+
+    #[test]
+    fn test_range() {
+        let stack = run_get_stack("1 5 range");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+                Value::Integer(4),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_map() {
+        let stack = run_get_stack("{ 1 2 3 } [dup *] map");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::Integer(1),
+                Value::Integer(4),
+                Value::Integer(9),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_filter() {
+        let stack = run_get_stack("{ 1 2 3 4 5 6 } [ 2 % 0 =] filter");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::Integer(2),
+                Value::Integer(4),
+                Value::Integer(6),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_fold() {
+        let stack = run_get_stack("{ 1 2 3 4 5 } 0 [+] fold");
+        assert_eq!(stack, vec![Value::Integer(15)]);
+    }
+
+    #[test]
+    fn test_factorial() {
+        let stack = run_get_stack(
+            "def factorial dup 1 <= [drop 1] [dup 1 - factorial *] if end 5 factorial",
+        );
+        assert_eq!(stack, vec![Value::Integer(120)]);
+    }
+
+    #[test]
+    fn test_fibonacci() {
+        let stack = run_get_stack(
+            "def fib \
+                dup 1 <= \
+                [ drop 1 ] \
+                [ dup 1 - fib swap 2 - fib + ] \
+             if end \
+             10 fib",
+        );
+
+        assert_eq!(stack, vec![Value::Integer(89)]);
+    }
+
+    #[test]
+    fn test_fibonacci_base_cases() {
+        let stack0 =
+            run_get_stack("def fib dup 1 <= [drop 1] [dup 1 - fib swap 2 - fib +] if end 0 fib");
+        assert_eq!(stack0, vec![Value::Integer(1)]);
+
+        let stack1 =
+            run_get_stack("def fib dup 1 <= [drop 1] [dup 1 - fib swap 2 - fib +] if end 1 fib");
+        assert_eq!(stack1, vec![Value::Integer(1)]);
+    }
 }
