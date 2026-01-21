@@ -10,7 +10,7 @@ impl std::fmt::Display for RuntimeError {
 }
 
 impl RuntimeError {
-    fn new(msg: &str) -> Self {
+    pub fn new(msg: &str) -> Self {
         RuntimeError {
             message: msg.to_string(),
         }
