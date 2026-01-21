@@ -9,7 +9,7 @@ mod vm;
 
 use lexer::Lexer;
 use parser::Parser;
-use std::{env, fs};
+use std::{env, fs, path::Path};
 use token_dumper::TokenDumper;
 
 use crate::vm::VM;
@@ -26,19 +26,22 @@ fn main() {
     let filename = args.iter().skip(1).find(|a| !a.starts_with('-'));
 
     match filename {
-        Some(filename) => match fs::read_to_string(filename) {
-            Ok(source) => {
-                if tokens_only {
-                    dump_tokens(&source, no_color, pretty);
-                } else {
-                    run_program(&source, filename, ast);
+        Some(filename) => {
+            ensure_extension(filename);
+            match fs::read_to_string(filename) {
+                Ok(source) => {
+                    if tokens_only {
+                        dump_tokens(&source, no_color, pretty);
+                    } else {
+                        run_program(&source, filename, ast);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to read '{}': {}", filename, e);
+                    std::process::exit(1);
                 }
             }
-            Err(e) => {
-                eprintln!("Failed to read '{}': {}", filename, e);
-                std::process::exit(1);
-            }
-        },
+        }
         None => {
             if args.len() == 1 {
                 println!("demo mode");
@@ -46,6 +49,14 @@ fn main() {
                 print_usage();
             }
         }
+    }
+}
+
+fn ensure_extension(filename: &str) {
+    let path = Path::new(filename);
+    if path.extension().and_then(|e| e.to_str()) != Some("em") {
+        eprintln!("Error: expected a .em file, got {}", filename);
+        std::process::exit(1);
     }
 }
 
@@ -114,6 +125,11 @@ fn run_program(source: &str, filename: &str, ast: bool) {
     vm.set_current_dir(std::path::Path::new(filename));
 
     if let Err(e) = vm.load(&program) {
+        eprintln!("Runtime error: {}", e);
+        std::process::exit(1);
+    }
+
+    if let Err(e) = vm.run(&program) {
         eprintln!("Runtime error: {}", e);
         std::process::exit(1);
     }
