@@ -335,6 +335,7 @@ impl Parser {
                 self.advance();
                 Node::Literal(Value::Bool(b))
             }
+
             // Quotation
             Token::LBracket => {
                 let quotation = self.parse_quotation()?;
@@ -524,6 +525,82 @@ impl Parser {
             }
 
             // Additional builtins
+            Token::Min => {
+                self.advance();
+                Node::Min
+            }
+            Token::Max => {
+                self.advance();
+                Node::Max
+            }
+            Token::Pow => {
+                self.advance();
+                Node::Pow
+            }
+            Token::Sqrt => {
+                self.advance();
+                Node::Sqrt
+            }
+            Token::Nth => {
+                self.advance();
+                Node::Nth
+            }
+            Token::Append => {
+                self.advance();
+                Node::Append
+            }
+            Token::Sort => {
+                self.advance();
+                Node::Sort
+            }
+            Token::Reverse => {
+                self.advance();
+                Node::Reverse
+            }
+            Token::Chars => {
+                self.advance();
+                Node::Chars
+            }
+            Token::Join => {
+                self.advance();
+                Node::Join
+            }
+            Token::Split => {
+                self.advance();
+                Node::Split
+            }
+            Token::Upper => {
+                self.advance();
+                Node::Upper
+            }
+            Token::Lower => {
+                self.advance();
+                Node::Lower
+            }
+            Token::Trim => {
+                self.advance();
+                Node::Trim
+            }
+            Token::Clear => {
+                self.advance();
+                Node::Clear
+            }
+            Token::Depth => {
+                self.advance();
+                Node::Depth
+            }
+            Token::Type => {
+                self.advance();
+                Node::Type
+            }
+            Token::ToString => {
+                self.advance();
+                Node::ToString
+            }
+            Token::ToInt => {
+                self.advance();
+                Node::ToInt
+            }
 
             // User-defined word
             Token::Ident(name) => {

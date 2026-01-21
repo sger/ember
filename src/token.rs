@@ -63,6 +63,27 @@ pub enum Token {
     Read,
     Debug,
 
+    // Additional builtins (stdlib)
+    Min,
+    Max,
+    Pow,
+    Sqrt,
+    Nth,
+    Append,
+    Sort,
+    Reverse,
+    Chars,
+    Join,
+    Split,
+    Upper,
+    Lower,
+    Trim,
+    Clear,
+    Depth,
+    Type,
+    ToString,
+    ToInt,
+
     // Definition
     Def,
     End,
@@ -83,7 +104,6 @@ pub enum Token {
     Comment(std::string::String),
     Newline,
     Eof,
-    // TODO stdlib
 }
 
 impl Token {
@@ -133,6 +153,25 @@ impl Token {
                 | Token::Emit
                 | Token::Read
                 | Token::Debug
+                | Token::Min
+                | Token::Max
+                | Token::Pow
+                | Token::Sqrt
+                | Token::Nth
+                | Token::Append
+                | Token::Sort
+                | Token::Reverse
+                | Token::Chars
+                | Token::Join
+                | Token::Split
+                | Token::Upper
+                | Token::Lower
+                | Token::Trim
+                | Token::Clear
+                | Token::Depth
+                | Token::Type
+                | Token::ToString
+                | Token::ToInt
         )
     }
 }
@@ -185,6 +224,25 @@ impl std::fmt::Display for Token {
             Token::Emit => write!(f, "emit"),
             Token::Read => write!(f, "read"),
             Token::Debug => write!(f, "debug"),
+            Token::Min => write!(f, "min"),
+            Token::Max => write!(f, "max"),
+            Token::Pow => write!(f, "pow"),
+            Token::Sqrt => write!(f, "sqrt"),
+            Token::Nth => write!(f, "nth"),
+            Token::Append => write!(f, "append"),
+            Token::Sort => write!(f, "sort"),
+            Token::Reverse => write!(f, "reverse"),
+            Token::Chars => write!(f, "chars"),
+            Token::Join => write!(f, "join"),
+            Token::Split => write!(f, "split"),
+            Token::Upper => write!(f, "upper"),
+            Token::Lower => write!(f, "lower"),
+            Token::Trim => write!(f, "trim"),
+            Token::Clear => write!(f, "clear"),
+            Token::Depth => write!(f, "depth"),
+            Token::Type => write!(f, "type"),
+            Token::ToString => write!(f, "to-string"),
+            Token::ToInt => write!(f, "to-int"),
             Token::Def => write!(f, "def"),
             Token::End => write!(f, "end"),
             Token::Import => write!(f, "import"),

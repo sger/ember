@@ -457,7 +457,153 @@ impl VM {
             }
 
             // Additional builtins
-            // TODO
+            Node::Min => {
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                self.push(Value::Integer(a.min(b)));
+            }
+            Node::Max => {
+                let b = self.pop_int()?;
+                let a = self.pop_int()?;
+                self.push(Value::Integer(a.max(b)));
+            }
+            Node::Pow => {
+                let exp = self.pop_int()?;
+                let base = self.pop_int()?;
+                if exp < 0 {
+                    return Err(RuntimeError::new("negative exponent"));
+                }
+                self.push(Value::Integer(base.pow(exp as u32)));
+            }
+            Node::Sqrt => {
+                let n = self.pop()?;
+                match n {
+                    Value::Integer(n) => {
+                        self.push(Value::Float((n as f64).sqrt()));
+                    }
+                    Value::Float(n) => {
+                        self.push(Value::Float(n.sqrt()));
+                    }
+                    other => {
+                        return Err(RuntimeError::new(&format!("cannot take sqrt of {}", other)));
+                    }
+                }
+            }
+            Node::Nth => {
+                let idx = self.pop_int()?;
+                let list = self.pop_list()?;
+                if idx < 0 || idx as usize >= list.len() {
+                    return Err(RuntimeError::new(&format!(
+                        "index {} out of bounds for list of length {}",
+                        idx,
+                        list.len()
+                    )));
+                }
+                self.push(list[idx as usize].clone());
+            }
+            Node::Append => {
+                let elem = self.pop()?;
+                let mut list = self.pop_list()?;
+                list.push(elem);
+                self.push(Value::List(list));
+            }
+            Node::Sort => {
+                let mut list = self.pop_list()?;
+                // Only sort if all integers
+                let all_ints = list.iter().all(|v| matches!(v, Value::Integer(_)));
+                if all_ints {
+                    list.sort_by(|a, b| {
+                        if let (Value::Integer(a), Value::Integer(b)) = (a, b) {
+                            a.cmp(b)
+                        } else {
+                            std::cmp::Ordering::Equal
+                        }
+                    });
+                }
+                self.push(Value::List(list));
+            }
+            Node::Reverse => {
+                let mut list = self.pop_list()?;
+                list.reverse();
+                self.push(Value::List(list));
+            }
+            Node::Chars => {
+                let s = self.pop_string()?;
+                let chars: Vec<Value> = s.chars().map(|c| Value::String(c.to_string())).collect();
+                self.push(Value::List(chars));
+            }
+            Node::Join => {
+                let sep = self.pop_string()?;
+                let list = self.pop_list()?;
+                let strings: Vec<String> = list.iter().map(|v| format!("{}", v)).collect();
+                self.push(Value::String(strings.join(&sep)));
+            }
+            Node::Split => {
+                let sep = self.pop_string()?;
+                let s = self.pop_string()?;
+                let parts: Vec<Value> = s
+                    .split(&sep)
+                    .map(|p| Value::String(p.to_string()))
+                    .collect();
+                self.push(Value::List(parts));
+            }
+            Node::Upper => {
+                let s = self.pop_string()?;
+                self.push(Value::String(s.to_uppercase()));
+            }
+            Node::Lower => {
+                let s = self.pop_string()?;
+                self.push(Value::String(s.to_lowercase()));
+            }
+            Node::Trim => {
+                let s = self.pop_string()?;
+                self.push(Value::String(s.trim().to_string()));
+            }
+            Node::Clear => {
+                self.stack.clear();
+            }
+            Node::Depth => {
+                let depth = self.stack.len() as i64;
+                self.push(Value::Integer(depth));
+            }
+            Node::Type => {
+                let value = self.pop()?;
+                let type_name = match &value {
+                    Value::Integer(_) => "Integer",
+                    Value::Float(_) => "Float",
+                    Value::String(_) => "String",
+                    Value::Bool(_) => "Bool",
+                    Value::List(_) => "List",
+                    Value::Quotation(_) => "Quotation",
+                    // CompiledQuotation
+                };
+                self.push(value);
+                self.push(Value::String(type_name.to_string()));
+            }
+            Node::ToString => {
+                let value = self.pop()?;
+                self.push(Value::String(format!("{}", value)));
+            }
+            Node::ToInt => {
+                let value = self.pop()?;
+                match value {
+                    Value::Integer(n) => self.push(Value::Integer(n)),
+                    Value::Float(n) => self.push(Value::Integer(n as i64)),
+                    Value::String(s) => {
+                        let n: i64 = s.trim().parse().map_err(|_| {
+                            RuntimeError::new(&format!("cannot parse '{}' as integer", s))
+                        })?;
+                        self.push(Value::Integer(n));
+                    }
+                    Value::Bool(b) => self.push(Value::Integer(if b { 1 } else { 0 })),
+                    other => {
+                        return Err(RuntimeError::new(&format!(
+                            "cannot convert {} to integer",
+                            other
+                        )));
+                    }
+                }
+            }
 
             // User-defined word (checks aliases first)
             Node::Word(name) => {
@@ -824,5 +970,127 @@ mod tests {
         let stack1 =
             run_get_stack("def fib dup 1 <= [drop 1] [dup 1 - fib swap 2 - fib +] if end 1 fib");
         assert_eq!(stack1, vec![Value::Integer(1)]);
+    }
+
+    #[test]
+    fn test_min_max() {
+        let stack = run_get_stack("5 10 min");
+        assert_eq!(stack, vec![Value::Integer(5)]);
+
+        let stack = run_get_stack("5 10 max");
+        assert_eq!(stack, vec![Value::Integer(10)]);
+    }
+
+    #[test]
+    fn test_pow() {
+        let stack = run_get_stack("2 10 pow");
+        assert_eq!(stack, vec![Value::Integer(1024)]);
+    }
+
+    #[test]
+    fn test_reverse() {
+        let stack = run_get_stack("{ 1 2 3 } reverse");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::Integer(3),
+                Value::Integer(2),
+                Value::Integer(1),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_sort() {
+        let stack = run_get_stack("{ 3 1 4 1 5 } sort");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::Integer(1),
+                Value::Integer(1),
+                Value::Integer(3),
+                Value::Integer(4),
+                Value::Integer(5),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_nth() {
+        let stack = run_get_stack("{ 10 20 30 } 1 nth");
+        assert_eq!(stack, vec![Value::Integer(20)]);
+    }
+
+    #[test]
+    fn test_append() {
+        let stack = run_get_stack("{ 1 2 } 3 append");
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+            ])]
+        );
+    }
+
+    #[test]
+    fn test_upper_lower() {
+        let stack = run_get_stack(r#""Hello" upper"#);
+        assert_eq!(stack, vec![Value::String("HELLO".to_string())]);
+
+        let stack = run_get_stack(r#""Hello" lower"#);
+        assert_eq!(stack, vec![Value::String("hello".to_string())]);
+    }
+
+    #[test]
+    fn test_split_join() {
+        let stack = run_get_stack(r#""a,b,c" "," split"#);
+        assert_eq!(
+            stack,
+            vec![Value::List(vec![
+                Value::String("a".to_string()),
+                Value::String("b".to_string()),
+                Value::String("c".to_string()),
+            ])]
+        );
+
+        let stack = run_get_stack(r#"{ "a" "b" "c" } "-" join"#);
+        assert_eq!(stack, vec![Value::String("a-b-c".to_string())]);
+    }
+
+    #[test]
+    fn test_depth_clear() {
+        let stack = run_get_stack("1 2 3 depth");
+        assert_eq!(
+            stack,
+            vec![
+                Value::Integer(1),
+                Value::Integer(2),
+                Value::Integer(3),
+                Value::Integer(3),
+            ]
+        );
+
+        let stack = run_get_stack("1 2 3 clear depth");
+        assert_eq!(stack, vec![Value::Integer(0)]);
+    }
+
+    #[test]
+    fn test_type() {
+        let stack = run_get_stack("42 type");
+        assert_eq!(
+            stack,
+            vec![Value::Integer(42), Value::String("Integer".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_to_string_to_int() {
+        let stack = run_get_stack("42 to-string");
+        assert_eq!(stack, vec![Value::String("42".to_string())]);
+
+        let stack = run_get_stack(r#""123" to-int"#);
+        assert_eq!(stack, vec![Value::Integer(123)]);
     }
 }

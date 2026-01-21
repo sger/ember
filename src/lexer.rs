@@ -311,6 +311,27 @@ impl Lexer {
             "read" => Token::Read,
             "debug" => Token::Debug,
 
+            // Additional builtins
+            "min" => Token::Min,
+            "max" => Token::Max,
+            "pow" => Token::Pow,
+            "sqrt" => Token::Sqrt,
+            "nth" => Token::Nth,
+            "append" => Token::Append,
+            "sort" => Token::Sort,
+            "reverse" => Token::Reverse,
+            "chars" => Token::Chars,
+            "join" => Token::Join,
+            "split" => Token::Split,
+            "upper" => Token::Upper,
+            "lower" => Token::Lower,
+            "trim" => Token::Trim,
+            "clear" => Token::Clear,
+            "depth" => Token::Depth,
+            "type" => Token::Type,
+            "to-string" => Token::ToString,
+            "to-int" => Token::ToInt,
+
             // Definition
             "def" => Token::Def,
             "end" => Token::End,
