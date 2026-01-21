@@ -21,6 +21,7 @@ fn main() {
     let no_color = args.contains(&"--no-color".to_string());
     let pretty = args.contains(&"--pretty".to_string());
     let ast = args.contains(&"--ast".to_string());
+    let ast_full = args.contains(&"--ast-full".to_string());
 
     // first non-flag argument is the filename
     let filename = args.iter().skip(1).find(|a| !a.starts_with('-'));
@@ -33,7 +34,7 @@ fn main() {
                     if tokens_only {
                         dump_tokens(&source, no_color, pretty);
                     } else {
-                        run_program(&source, filename, ast);
+                        run_program(&source, filename, ast, ast_full);
                     }
                 }
                 Err(e) => {
@@ -95,7 +96,7 @@ fn print_usage() {
     println!("  ember --help, -h          Show this help");
 }
 
-fn run_program(source: &str, filename: &str, ast: bool) {
+fn run_program(source: &str, filename: &str, ast: bool, ast_full: bool) {
     let mut lexer = Lexer::new(source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
@@ -115,14 +116,20 @@ fn run_program(source: &str, filename: &str, ast: bool) {
         }
     };
 
-    // print ast only
-    if ast {
-        println!("AST (entry): {}", filename);
-        println!("{:#?}", program);
-    }
-
     let mut vm = VM::new();
     vm.set_current_dir(std::path::Path::new(filename));
+
+    // Print full ast
+    if ast_full {
+        vm.print_ast_full(Some(Path::new(&filename)), &program);
+        return;
+    }
+
+    // Print ast only
+    if ast {
+        println!("{:#?}", program);
+        return;
+    }
 
     if let Err(e) = vm.load(&program) {
         eprintln!("Runtime error: {}", e);

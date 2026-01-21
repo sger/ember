@@ -3,8 +3,26 @@ use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::runtime_error::RuntimeError;
 use std::collections::{HashMap, HashSet};
+use std::f64;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct VMConfig {
+    pub max_call_depth: usize,
+    pub max_steps: Option<usize>,
+    pub max_stack_size: usize,
+}
+
+impl Default for VMConfig {
+    fn default() -> Self {
+        VMConfig {
+            max_call_depth: 1000,
+            max_steps: None,
+            max_stack_size: 10_000,
+        }
+    }
+}
 
 pub struct VM {
     stack: Vec<Value>,
@@ -16,10 +34,18 @@ pub struct VM {
     current_dir: Option<PathBuf>,
     // Print full abstract syntax tree
     imported_programs: Vec<(PathBuf, Program)>,
+    config: VMConfig,
+    call_depth: usize,
+    call_stack: Vec<String>,
+    steps: usize,
 }
 
 impl VM {
     pub fn new() -> Self {
+        Self::with_config(VMConfig::default())
+    }
+
+    pub fn with_config(config: VMConfig) -> Self {
         VM {
             stack: Vec::new(),
             words: HashMap::new(),
@@ -27,7 +53,41 @@ impl VM {
             imported: HashSet::new(),
             current_dir: None,
             imported_programs: Vec::new(),
+            config,
+            call_depth: 0,
+            call_stack: Vec::new(),
+            steps: 0,
         }
+    }
+
+    pub fn imported_programs_snapshot(&self) -> Vec<(PathBuf, Program)> {
+        self.imported_programs.clone()
+    }
+
+    /// Convenience: pretty-print all ASTs (main + imported) for `--ast-full`.
+    pub fn print_ast_full(&self, main_path: Option<&Path>, main_program: &Program) {
+        // Main file/program
+        if let Some(p) = main_path {
+            println!("== AST (main: {}) ==", p.display());
+        } else {
+            println!("== AST (main) ==");
+        }
+        println!("{:#?}", main_program);
+
+        // Imported files/programs
+        for (path, program) in &self.imported_programs {
+            println!();
+            println!("== AST (import: {}) ==", path.display());
+            println!("{:#?}", program);
+        }
+    }
+
+    pub fn words_snapshot(&self) -> std::collections::HashMap<String, Vec<crate::ast::Node>> {
+        self.words.clone()
+    }
+
+    pub fn aliases_snapshot(&self) -> std::collections::HashMap<String, String> {
+        self.aliases.clone()
     }
 
     fn push(&mut self, value: Value) {
@@ -88,6 +148,71 @@ impl VM {
         }
     }
 
+    /// Pop a numeric value, returning (value as f64, was_integer)
+    fn pop_numeric(&mut self) -> Result<(f64, bool), RuntimeError> {
+        match self.pop()? {
+            Value::Integer(n) => Ok((n as f64, true)),
+            Value::Float(n) => Ok((n, false)),
+            other => Err(RuntimeError::new(&format!(
+                "expected number, got {}",
+                other
+            ))),
+        }
+    }
+
+    /// Apply a binary numeric operation, preserving integer type when possible
+    fn numeric_binop<F>(&mut self, op: F, op_name: &str) -> Result<(), RuntimeError>
+    where
+        F: Fn(f64, f64) -> f64,
+    {
+        let b = self.pop()?;
+        let a = self.pop()?;
+        let result = match (&a, &b) {
+            (Value::Integer(a), Value::Integer(b)) => {
+                let r = op(*a as f64, *b as f64);
+                if r.fract() == 0.0 && r >= i64::MIN as f64 && r <= i64::MAX as f64 {
+                    Value::Integer(r as i64)
+                } else {
+                    Value::Float(r)
+                }
+            }
+            (Value::Float(a), Value::Float(b)) => Value::Float(op(*a, *b)),
+            (Value::Integer(a), Value::Float(b)) => Value::Float(op(*a as f64, *b)),
+            (Value::Float(a), Value::Integer(b)) => Value::Float(op(*a, *b as f64)),
+            _ => {
+                return Err(RuntimeError::new(&format!(
+                    "cannot {} {} and {}",
+                    op_name, a, b
+                )));
+            }
+        };
+        self.push(result);
+        Ok(())
+    }
+
+    /// Compare two numeric values
+    fn numeric_compare<F>(&mut self, op: F) -> Result<(), RuntimeError>
+    where
+        F: Fn(f64, f64) -> bool,
+    {
+        let b = self.pop()?;
+        let a = self.pop()?;
+        let result = match (&a, &b) {
+            (Value::Integer(a), Value::Integer(b)) => op(*a as f64, *b as f64),
+            (Value::Float(a), Value::Float(b)) => op(*a, *b),
+            (Value::Integer(a), Value::Float(b)) => op(*a as f64, *b),
+            (Value::Float(a), Value::Integer(b)) => op(*a, *b as f64),
+            _ => {
+                return Err(RuntimeError::new(&format!(
+                    "cannot compare {} and {}",
+                    a, b
+                )));
+            }
+        };
+        self.push(Value::Bool(result));
+        Ok(())
+    }
+
     pub fn set_current_dir(&mut self, path: &Path) {
         self.current_dir = if path.is_dir() {
             Some(path.to_path_buf())
@@ -118,7 +243,28 @@ impl VM {
         Ok(())
     }
 
+    fn check_limits(&mut self) -> Result<(), RuntimeError> {
+        self.steps += 1;
+        if let Some(max) = self.config.max_steps {
+            if self.steps > max {
+                return Err(RuntimeError::new(&format!(
+                    "execution step limit exceeded ({})",
+                    max
+                )));
+            }
+        }
+        if self.stack.len() > self.config.max_stack_size {
+            return Err(RuntimeError::new(&format!(
+                "stack size limit exceeded ({})",
+                self.config.max_stack_size
+            )));
+        }
+        Ok(())
+    }
+
     fn execute_node(&mut self, node: &Node) -> Result<(), RuntimeError> {
+        self.check_limits()?;
+
         match node {
             // Literals
             Node::Literal(value) => {
@@ -157,54 +303,9 @@ impl VM {
             }
 
             // Arithmetic
-            Node::Add => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                let result = match (a, b) {
-                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
-                    (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
-                    (Value::Integer(a), Value::Float(b)) => Value::Float(a as f64 + b),
-                    (Value::Float(a), Value::Integer(b)) => Value::Float(a + b as f64),
-                    (a, b) => {
-                        return Err(RuntimeError::new(&format!("cannot add {} and {}", a, b)));
-                    }
-                };
-                self.push(result);
-            }
-            Node::Sub => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                let result = match (a, b) {
-                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
-                    (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
-                    (Value::Integer(a), Value::Float(b)) => Value::Float(a as f64 - b),
-                    (Value::Float(a), Value::Integer(b)) => Value::Float(a - b as f64),
-                    (a, b) => {
-                        return Err(RuntimeError::new(&format!(
-                            "cannot subtract {} and {}",
-                            a, b
-                        )));
-                    }
-                };
-                self.push(result);
-            }
-            Node::Mul => {
-                let b = self.pop()?;
-                let a = self.pop()?;
-                let result = match (a, b) {
-                    (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
-                    (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
-                    (Value::Integer(a), Value::Float(b)) => Value::Float(a as f64 * b),
-                    (Value::Float(a), Value::Integer(b)) => Value::Float(a * b as f64),
-                    (a, b) => {
-                        return Err(RuntimeError::new(&format!(
-                            "cannot multiply {} and {}",
-                            a, b
-                        )));
-                    }
-                };
-                self.push(result);
-            }
+            Node::Add => self.numeric_binop(|a, b| a + b, "add")?,
+            Node::Sub => self.numeric_binop(|a, b| a - b, "subtract")?,
+            Node::Mul => self.numeric_binop(|a, b| a * b, "multiply")?,
             Node::Div => {
                 let b = self.pop()?;
                 let a = self.pop()?;
@@ -264,26 +365,10 @@ impl VM {
                 let a = self.pop()?;
                 self.push(Value::Bool(a != b));
             }
-            Node::Lt => {
-                let b = self.pop_int()?;
-                let a = self.pop_int()?;
-                self.push(Value::Bool(a < b));
-            }
-            Node::Gt => {
-                let b = self.pop_int()?;
-                let a = self.pop_int()?;
-                self.push(Value::Bool(a > b));
-            }
-            Node::LtEq => {
-                let b = self.pop_int()?;
-                let a = self.pop_int()?;
-                self.push(Value::Bool(a <= b));
-            }
-            Node::GtEq => {
-                let b = self.pop_int()?;
-                let a = self.pop_int()?;
-                self.push(Value::Bool(a >= b));
-            }
+            Node::Lt => self.numeric_compare(|a, b| a < b)?,
+            Node::Gt => self.numeric_compare(|a, b| a > b)?,
+            Node::LtEq => self.numeric_compare(|a, b| a <= b)?,
+            Node::GtEq => self.numeric_compare(|a, b| a >= b)?,
 
             // Logic
             Node::And => {
@@ -609,8 +694,26 @@ impl VM {
             Node::Word(name) => {
                 let body = self
                     .lookup_word(name)
-                    .ok_or_else(|| RuntimeError::new(&format!("undefined word: {}", name)))?;
-                self.execute(&body)?;
+                    .ok_or_else(|| RuntimeError::new(&format!("undefined word: {}", name)))?
+                    .to_vec();
+
+                self.call_depth += 1;
+
+                if self.call_depth > self.config.max_call_depth {
+                    return Err(RuntimeError::new(&format!(
+                        "call depth limit exceeded ({}) - possible infinite recursion in '{}'",
+                        self.config.max_call_depth, name
+                    )));
+                }
+
+                self.call_stack.push(name.clone());
+
+                let result = self.execute(&body);
+
+                self.call_stack.pop();
+                self.call_depth -= 1;
+
+                result.map_err(|e| e.with_context(name))?;
             }
 
             // Qualified word (Module.word)
@@ -621,7 +724,22 @@ impl VM {
                     .get(&qualified)
                     .ok_or_else(|| RuntimeError::new(&format!("undefined: {}.{}", module, word)))?
                     .clone();
-                self.execute(&body)?;
+
+                self.call_depth += 1;
+                if self.call_depth > self.config.max_call_depth {
+                    return Err(RuntimeError::new(&format!(
+                        "call depth limit exceeded ({}) - possible infinite recursion in '{}'",
+                        self.config.max_call_depth, qualified
+                    )));
+                }
+                self.call_stack.push(qualified.clone());
+
+                let result = self.execute(&body);
+
+                self.call_stack.pop();
+                self.call_depth -= 1;
+
+                result.map_err(|e| e.with_context(&qualified))?;
             }
 
             // Definition (shouldn't be executed directly)
@@ -647,12 +765,11 @@ impl VM {
         Ok(())
     }
 
-    fn lookup_word(&self, name: &str) -> Option<Vec<Node>> {
+    fn lookup_word(&self, name: &str) -> Option<&[Node]> {
         if let Some(qualified) = self.aliases.get(name) {
-            return self.words.get(qualified).cloned();
+            return self.words.get(qualified).map(|v| v.as_slice());
         }
-
-        self.words.get(name).cloned()
+        self.words.get(name).map(|v| v.as_slice())
     }
 
     fn process_definition(&mut self, def: &Node) -> Result<(), RuntimeError> {
