@@ -416,8 +416,7 @@ impl VM {
                 if n < 0 {
                     return Err(RuntimeError::new("times expects non-negative integer"));
                 }
-                for i in 0..(n as i64) {
-                    self.push(Value::Integer(i)); // optional: include index; or omit if you prefer
+                for _ in 0..n {
                     self.execute(&body)?;
                 }
             }
