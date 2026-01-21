@@ -142,7 +142,7 @@ impl VM {
         match self.pop()? {
             Value::String(s) => Ok(s),
             other => Err(RuntimeError::new(&format!(
-                "expected string, for {}",
+                "expected string, got {}",
                 other
             ))),
         }
@@ -228,7 +228,15 @@ impl VM {
         Ok(())
     }
 
+    pub fn reset_execution_state(&mut self) {
+        self.steps = 0;
+        self.call_depth = 0;
+        self.call_stack.clear();
+    }
+
     pub fn run(&mut self, program: &Program) -> Result<(), RuntimeError> {
+        self.reset_execution_state();
+
         for def in &program.definitions {
             self.process_definition(def)?;
         }
@@ -316,9 +324,24 @@ impl VM {
                         }
                         Value::Integer(a / b)
                     }
-                    (Value::Float(a), Value::Float(b)) => Value::Float(a / b),
-                    (Value::Integer(a), Value::Float(b)) => Value::Float(a as f64 / b),
-                    (Value::Float(a), Value::Integer(b)) => Value::Float(a / b as f64),
+                    (Value::Float(a), Value::Float(b)) => {
+                        if b == 0.0 {
+                            return Err(RuntimeError::new("division by zero"));
+                        }
+                        Value::Float(a / b)
+                    }
+                    (Value::Integer(a), Value::Float(b)) => {
+                        if b == 0.0 {
+                            return Err(RuntimeError::new("division by zero"));
+                        }
+                        Value::Float(a as f64 / b)
+                    }
+                    (Value::Float(a), Value::Integer(b)) => {
+                        if b == 0 {
+                            return Err(RuntimeError::new("division by zero"));
+                        }
+                        Value::Float(a / b as f64)
+                    }
                     (a, b) => {
                         return Err(RuntimeError::new(&format!("cannot divide {} and {}", a, b)));
                     }
@@ -470,6 +493,14 @@ impl VM {
             Node::Range => {
                 let end = self.pop_int()?;
                 let start = self.pop_int()?;
+
+                if start > end {
+                    return Err(RuntimeError::new(&format!(
+                        "range: start ({}) cannot be greater than end ({})",
+                        start, end
+                    )));
+                }
+
                 let list: Vec<Value> = (start..end).map(Value::Integer).collect();
                 self.push(Value::List(list));
             }
@@ -558,17 +589,32 @@ impl VM {
                 let exp = self.pop_int()?;
                 let base = self.pop_int()?;
                 if exp < 0 {
-                    return Err(RuntimeError::new("negative exponent"));
+                    return Err(RuntimeError::new(
+                        "negative exponent not supported for integer power",
+                    ));
                 }
-                self.push(Value::Integer(base.pow(exp as u32)));
+                let result = base
+                    .checked_pow(exp as u32)
+                    .ok_or_else(|| RuntimeError::new("integer overflow in power operation"))?;
+                self.push(Value::Integer(result));
             }
             Node::Sqrt => {
                 let n = self.pop()?;
                 match n {
                     Value::Integer(n) => {
+                        if n < 0 {
+                            return Err(RuntimeError::new(
+                                "cannot take square root of negative number",
+                            ));
+                        }
                         self.push(Value::Float((n as f64).sqrt()));
                     }
                     Value::Float(n) => {
+                        if n < 0.0 {
+                            return Err(RuntimeError::new(
+                                "cannot take square root of negative number",
+                            ));
+                        }
                         self.push(Value::Float(n.sqrt()));
                     }
                     other => {
@@ -833,20 +879,33 @@ impl VM {
             }
 
             // Definition (shouldn't be executed directly)
-            Node::Def { .. } => {}
+            Node::Def { .. } => {
+                return Err(RuntimeError::new(
+                    "definition cannot appear in executable code",
+                ));
+            }
 
             // Module (handled during program loading)
-            Node::Module { .. } => {}
+            Node::Module { .. } => {
+                return Err(RuntimeError::new(
+                    "module declaration cannot appear in executable code",
+                ));
+            }
 
             // Use (handled during program loading)
-            Node::Use { .. } => {}
+            Node::Use { .. } => {
+                return Err(RuntimeError::new(
+                    "use statement cannot appear in executable code",
+                ));
+            }
 
             // Import (handled during program loading)
-            Node::Import(_) => {}
+            Node::Import(_) => {
+                return Err(RuntimeError::new(
+                    "import statement cannot appear in executable code",
+                ));
+            }
 
-            // Node::Def { .. } | Node::Module { .. } | Node::Use { .. } | Node::Import(_) => {
-            //     self.process_definition(node)?;
-            // }
             other => {
                 return Err(RuntimeError::new(&format!("unhandled node: {:?}", other)));
             }
@@ -973,7 +1032,8 @@ impl VM {
                 self.words.insert(qualified.clone(), body.clone());
 
                 // Also register with unqualified name for intra-module calls
-                // (can be overridden by later definitions or use statements)
+                // Note: First module to define a word gets the unqualified name
+                // Later modules must use qualified names to avoid conflicts
                 if !self.words.contains_key(word_name) {
                     self.words.insert(word_name.clone(), body.clone());
                 }
@@ -1037,6 +1097,17 @@ mod tests {
         let mut vm = VM::new();
         vm.run(&program).unwrap();
         vm
+    }
+
+    // Helper function for testing error cases
+    fn run_expect_error(source: &str) -> RuntimeError {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+        let mut vm = VM::new();
+        vm.run(&program)
+            .expect_err("Expected an error but got success")
     }
 
     fn run_get_stack(source: &str) -> Vec<Value> {
@@ -1429,5 +1500,153 @@ mod tests {
         // Build a processing pipeline: add 1, then double
         let stack = run_get_stack("[1 +] [2 *] compose 10 swap call");
         assert_eq!(stack, vec![Value::Integer(22)]); // (10 + 1) * 2 = 22
+    }
+
+    #[test]
+    fn test_times() {
+        let stack = run_get_stack("0 5 [1 +] times");
+        assert_eq!(stack, vec![Value::Integer(5)]);
+
+        let stack = run_get_stack("3 [10] times depth");
+        assert_eq!(
+            stack,
+            vec![
+                Value::Integer(10),
+                Value::Integer(10),
+                Value::Integer(10),
+                Value::Integer(3)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_stack_underflow() {
+        let err = run_expect_error("drop");
+        assert!(err.message.contains("stack underflow"));
+    }
+
+    #[test]
+    fn test_type_error_add() {
+        let err = run_expect_error(r#""hello" 5 +"#);
+        assert!(err.message.contains("expected") || err.message.contains("cannot"));
+    }
+
+    #[test]
+    fn test_type_error_int_expected() {
+        let err = run_expect_error(r#""hello" 3 %"#);
+        assert!(err.message.contains("expected integer"));
+    }
+
+    #[test]
+    fn test_division_by_zero_int() {
+        let err = run_expect_error("10 0 /");
+        assert!(err.message.contains("division by zero"));
+    }
+
+    #[test]
+    fn test_division_by_zero_float() {
+        let err = run_expect_error("10.0 0.0 /");
+        assert!(err.message.contains("division by zero"));
+    }
+
+    #[test]
+    fn test_modulo_by_zero() {
+        let err = run_expect_error("10 0 %");
+        assert!(err.message.contains("modulo by zero"));
+    }
+
+    #[test]
+    fn test_out_of_bounds() {
+        let err = run_expect_error("{ 1 2 3 } 10 nth");
+        assert!(err.message.contains("index") || err.message.contains("out of bounds"));
+    }
+
+    #[test]
+    fn test_negative_index() {
+        let err = run_expect_error("{ 1 2 3 } -1 nth");
+        assert!(err.message.contains("index") || err.message.contains("out of bounds"));
+    }
+
+    #[test]
+    fn test_recursion_limit() {
+        // Use a VM with very low limits to catch recursion quickly without stack overflow
+        let mut lexer = Lexer::new("def infinite infinite end infinite");
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        let config = VMConfig {
+            max_call_depth: 50,    // Very low limit to avoid actual stack overflow
+            max_steps: Some(1000), // Also limit steps as backup
+            max_stack_size: 10_000,
+        };
+        let mut vm = VM::with_config(config);
+
+        let err = vm.run(&program).expect_err("Expected recursion error");
+        assert!(
+            err.message.contains("call depth limit")
+                || err.message.contains("recursion")
+                || err.message.contains("step limit")
+        );
+    }
+
+    #[test]
+    fn test_range_validation() {
+        let err = run_expect_error("5 1 range");
+        assert!(err.message.contains("cannot be greater than") || err.message.contains("range"));
+    }
+
+    #[test]
+    fn test_negative_sqrt_int() {
+        let err = run_expect_error("-5 sqrt");
+        assert!(err.message.contains("negative") || err.message.contains("square root"));
+    }
+
+    #[test]
+    fn test_negative_sqrt_float() {
+        let err = run_expect_error("-5.0 sqrt");
+        assert!(err.message.contains("negative") || err.message.contains("square root"));
+    }
+
+    #[test]
+    fn test_pow_overflow() {
+        let err = run_expect_error("2 100 pow");
+        assert!(err.message.contains("overflow"));
+    }
+
+    #[test]
+    fn test_negative_exponent() {
+        let err = run_expect_error("2 -5 pow");
+        assert!(err.message.contains("negative exponent"));
+    }
+
+    #[test]
+    fn test_head_empty_list() {
+        let err = run_expect_error("{ } head");
+        assert!(err.message.contains("empty"));
+    }
+
+    #[test]
+    fn test_tail_empty_list() {
+        let err = run_expect_error("{ } tail");
+        assert!(err.message.contains("empty"));
+    }
+
+    #[test]
+    fn test_undefined_word() {
+        let err = run_expect_error("nonexistent-word");
+        assert!(err.message.contains("undefined"));
+    }
+
+    #[test]
+    fn test_times_negative() {
+        let err = run_expect_error("-5 [1] times");
+        assert!(err.message.contains("non-negative"));
+    }
+
+    #[test]
+    fn test_parse_int_failure() {
+        let err = run_expect_error(r#""not-a-number" to-int"#);
+        assert!(err.message.contains("parse") || err.message.contains("integer"));
     }
 }
