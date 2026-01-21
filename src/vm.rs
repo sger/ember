@@ -412,9 +412,12 @@ impl VM {
             // Loops & higher-order
             Node::Times => {
                 let body = self.pop_quotation()?;
-                let list = self.pop_list()?;
-                for item in list {
-                    self.push(item);
+                let n = self.pop_int()?;
+                if n < 0 {
+                    return Err(RuntimeError::new("times expects non-negative integer"));
+                }
+                for i in 0..(n as i64) {
+                    self.push(Value::Integer(i)); // optional: include index; or omit if you prefer
                     self.execute(&body)?;
                 }
             }
