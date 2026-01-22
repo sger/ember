@@ -1,8 +1,9 @@
 use crate::bytecode::Op;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// A compiled bytecode program.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgramBc {
     /// Collection of code objects (instruction streams).
     /// Convention: `code[0]` is always `main`.
@@ -22,7 +23,7 @@ impl ProgramBc {
 }
 
 /// A single compiled instruction stream.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeObject {
     pub ops: Vec<Op>,
 }

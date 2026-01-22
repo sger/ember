@@ -1,10 +1,11 @@
 use crate::lang::value::Value;
+use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // OP - Bytecode instructions
 // =============================================================================
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Op {
     // literals
     Push(Value),

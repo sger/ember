@@ -1,11 +1,12 @@
 use super::use_item::UseItem;
 use super::value::Value;
+use serde::{Deserialize, Serialize};
 
 /// Abstract Syntax Tree node for the Ember language.
 ///
 /// Each `Node` represents a single executable or structural element
 /// in an Ember program.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[allow(dead_code)]
 pub enum Node {
     // ───────────────────────────── Literals ─────────────────────────────

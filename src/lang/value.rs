@@ -1,10 +1,11 @@
 use super::node::Node;
 use crate::bytecode::op::Op;
+use serde::{Deserialize, Serialize};
 
 /// Runtime value in the Ember language.
 ///
 /// Values are the only data that can exist on the Ember data stack.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     /// 64-bit signed integer.
     Integer(i64),

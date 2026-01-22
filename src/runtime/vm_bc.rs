@@ -192,7 +192,9 @@ impl VmBc {
                 // Literals
                 Op::Push(v) => self.push(v.clone()),
 
-                _ => {}
+                _ => {
+                    println!("error");
+                }
             }
 
             ip += 1;
