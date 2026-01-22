@@ -5,9 +5,11 @@ mod runtime;
 
 use std::{env, fs, path::Path};
 
+use crate::bytecode::compile::Compiler;
 use crate::runtime::vm_ast::VM;
 use crate::runtime::vm_bc::VmBc;
 
+use crate::bytecode::disasm::print_bc;
 use crate::frontend::lexer::Lexer;
 use crate::frontend::parser::Parser;
 use crate::frontend::token_dumper::TokenDumper;
@@ -153,7 +155,21 @@ fn run_program_ast(program: &crate::lang::program::Program, filename: &str) {
 }
 
 fn run_program_bc(program: &crate::lang::program::Program) {
-    let mut bc = VmBc::new();
+    let program_bytecode = match Compiler::new().compile_program(program) {
+        Ok(program_bytecode) => program_bytecode,
+        Err(e) => {
+            eprintln!("Compile error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    println!("=== BYTECODE PROGRAM ===");
+    println!("{:#?}", program_bytecode);
+
+    println!("=== BYTECODE PROGRAM ===");
+    print_bc(&program_bytecode);
+
+    let mut vm = VmBc::new();
 
     eprintln!("bytecode VM path not wired yet: need resolve+compile step");
     std::process::exit(1);

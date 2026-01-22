@@ -1,4 +1,5 @@
 use super::node::Node;
+use crate::bytecode::op::Op;
 
 /// Runtime value in the Ember language.
 ///
@@ -25,6 +26,8 @@ pub enum Value {
     /// Quotations are executable sequences of AST nodes and can be passed
     /// to higher-order combinators or executed via `Call`.
     Quotation(Vec<Node>),
+
+    CompiledQuotation(Vec<Op>),
 }
 
 impl std::fmt::Display for Value {
@@ -46,6 +49,7 @@ impl std::fmt::Display for Value {
                 write!(f, " }}")
             }
             Value::Quotation(_) => write!(f, "[...]"),
+            Value::CompiledQuotation(_) => write!(f, "[<compiled>]"),
         }
     }
 }

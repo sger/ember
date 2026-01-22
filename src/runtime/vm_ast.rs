@@ -708,7 +708,7 @@ impl VM {
                     Value::Bool(_) => "Bool",
                     Value::List(_) => "List",
                     Value::Quotation(_) => "Quotation",
-                    // CompiledQuotation
+                    Value::CompiledQuotation(_) => "CompiledQuotation",
                 };
                 self.push(value);
                 self.push(Value::String(type_name.to_string()));

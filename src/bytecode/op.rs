@@ -57,6 +57,7 @@ pub enum Op {
 
     /// Pop bool from stack, jump if true. If false, continue to next instruction.
     JumpIfTrue(i32),
+    Return,
 
     // loops & higher-order (still quotation-based for now)
     Times,
@@ -80,7 +81,7 @@ pub enum Op {
     Read,
     Debug,
 
-    // Additional builtins
+    // stdlib
     Min,
     Max,
     Pow,
@@ -101,15 +102,20 @@ pub enum Op {
     ToString,
     ToInt,
 
+    Dip,
+    Keep,
+    Bi,
+    Bi2,
+    Tri,
+    Both,
+    Compose,
+    Curry,
+    Apply,
+
     // User-defined word calls
     CallWord(String),
     CallQualified {
         module: String,
         word: String,
     },
-
-    // Unit testing
-    UnitTest,
-
-    Return,
 }

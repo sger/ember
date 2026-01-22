@@ -1,1 +1,9 @@
+pub mod compile;
+pub mod compile_error;
+pub mod disasm;
+pub mod ir;
 pub mod op;
+
+pub use compile_error::CompileError;
+pub use ir::{CodeObject, ProgramBc};
+pub use op::Op;
