@@ -141,6 +141,47 @@ impl VmBc {
                     self.push(a.clone());
                     self.push(a);
                 }
+                Op::Drop => {
+                    self.pop()?;
+                }
+
+                // Arithmetic
+                Op::Sub => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    let result = match (&a, &b) {
+                        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
+                        (Value::Float(a), Value::Float(b)) => Value::Float(a - b),
+                        (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 - b),
+                        (Value::Float(a), Value::Integer(b)) => Value::Float(a - *b as f64),
+                        _ => {
+                            return Err(RuntimeError::new(&format!(
+                                "cannot subtract {} and {}",
+                                a, b
+                            )));
+                        }
+                    };
+
+                    self.push(result);
+                }
+
+                Op::Mul => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    let result = match (&a, &b) {
+                        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
+                        (Value::Float(a), Value::Float(b)) => Value::Float(a * b),
+                        (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 * b),
+                        (Value::Float(a), Value::Integer(b)) => Value::Float(a * *b as f64),
+                        _ => {
+                            return Err(RuntimeError::new(&format!(
+                                "cannot multiply {} and {}",
+                                a, b
+                            )));
+                        }
+                    };
+                    self.push(result);
+                }
 
                 // Comparison
                 Op::Eq => {
@@ -151,6 +192,35 @@ impl VmBc {
                 Op::Le => {
                     let (b, a) = self.pop_two_numeric()?;
                     self.push(Value::Bool(a <= b));
+                }
+
+                // Jump instructions
+                Op::Jump(offset) => {
+                    let new_ip = (ip as i32) + *offset;
+                    if new_ip < 0 || new_ip as usize > ops.len() {
+                        return Err(RuntimeError::new(&format!(
+                            "jump out of bounds: ip={}, offset={}, target={}",
+                            ip, offset, new_ip
+                        )));
+                    }
+                    ip = new_ip as usize;
+                    continue;
+                }
+
+                Op::JumpIfFalse(offset) => {
+                    let cond = self.pop_bool()?;
+
+                    if !cond {
+                        let new_ip = (ip as i32) + *offset;
+                        if new_ip < 0 || new_ip as usize > ops.len() {
+                            return Err(RuntimeError::new(&format!(
+                                "jump out of bounds: ip={}, offset={}, target={}",
+                                ip, offset, new_ip
+                            )));
+                        }
+                        ip = new_ip as usize;
+                        continue;
+                    }
                 }
 
                 // I/O
@@ -221,6 +291,16 @@ impl VmBc {
         };
 
         Ok((b_f, a_f))
+    }
+
+    fn pop_bool(&mut self) -> Result<bool, RuntimeError> {
+        match self.pop()? {
+            Value::Bool(b) => Ok(b),
+            other => Err(RuntimeError::new(&format!(
+                "expected boolean, got {}",
+                other
+            ))),
+        }
     }
 
     // Compilation
