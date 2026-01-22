@@ -1,19 +1,16 @@
-mod ast;
-mod lexer;
-mod parser;
-mod parser_error;
-mod runtime_error;
-mod token;
-mod token_dumper;
-mod vm;
+mod bytecode;
+mod frontend;
+mod lang;
+mod runtime;
 
-use lexer::Lexer;
-use parser::Parser;
 use std::{env, fs, path::Path};
-use token_dumper::TokenDumper;
 
-use crate::vm::vm::VM;
-use crate::vm::vm_bc::VmBc;
+use crate::runtime::vm_ast::VM;
+use crate::runtime::vm_bc::VmBc;
+
+use crate::frontend::lexer::Lexer;
+use crate::frontend::parser::Parser;
+use crate::frontend::token_dumper::TokenDumper;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -23,6 +20,7 @@ fn main() {
     let pretty = args.contains(&"--pretty".to_string());
     let ast = args.contains(&"--ast".to_string());
     let ast_full = args.contains(&"--ast-full".to_string());
+    let bytecode = args.contains(&"--bc".to_string()) || args.contains(&"--bytecode".to_string());
 
     // first non-flag argument is the filename
     let filename = args.iter().skip(1).find(|a| !a.starts_with('-'));
@@ -35,7 +33,7 @@ fn main() {
                     if tokens_only {
                         dump_tokens(&source, no_color, pretty);
                     } else {
-                        run_program(&source, filename, ast, ast_full);
+                        run_program(&source, filename, bytecode, ast, ast_full);
                     }
                 }
                 Err(e) => {
@@ -97,7 +95,7 @@ fn print_usage() {
     println!("  ember --help, -h          Show this help");
 }
 
-fn run_program(source: &str, filename: &str, ast: bool, ast_full: bool) {
+fn run_program(source: &str, filename: &str, bytecode: bool, ast: bool, ast_full: bool) {
     let mut lexer = Lexer::new(source);
     let tokens = match lexer.tokenize() {
         Ok(t) => t,
@@ -117,28 +115,46 @@ fn run_program(source: &str, filename: &str, ast: bool, ast_full: bool) {
         }
     };
 
-    let mut vm = VM::new();
-    vm.set_current_dir(std::path::Path::new(filename));
-
-    // Print full ast
-    if ast_full {
-        vm.print_ast_full(Some(Path::new(&filename)), &program);
-        return;
-    }
-
-    // Print ast only
+    // AST printing modes (do not depend on engine)
     if ast {
         println!("{:#?}", program);
         return;
     }
 
-    if let Err(e) = vm.load(&program) {
+    // If you want --ast-full to be supported even in bc mode,
+    // it needs to be done via the AST VM helper (or move printing elsewhere).
+    if ast_full {
+        let mut vm = VM::new();
+        vm.set_current_dir(std::path::Path::new(filename));
+        vm.print_ast_full(Some(Path::new(&filename)), &program);
+        return;
+    }
+
+    if bytecode {
+        run_program_bc(&program);
+    } else {
+        run_program_ast(&program, filename);
+    }
+}
+
+fn run_program_ast(program: &crate::lang::program::Program, filename: &str) {
+    let mut vm = VM::new();
+    vm.set_current_dir(std::path::Path::new(filename));
+
+    if let Err(e) = vm.load(program) {
         eprintln!("Runtime error: {}", e);
         std::process::exit(1);
     }
 
-    if let Err(e) = vm.run(&program) {
+    if let Err(e) = vm.run(program) {
         eprintln!("Runtime error: {}", e);
         std::process::exit(1);
     }
+}
+
+fn run_program_bc(program: &crate::lang::program::Program) {
+    let mut bc = VmBc::new();
+
+    eprintln!("bytecode VM path not wired yet: need resolve+compile step");
+    std::process::exit(1);
 }

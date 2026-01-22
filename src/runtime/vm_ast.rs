@@ -1,10 +1,7 @@
-use crate::ast::node::Node;
-use crate::ast::program::Program;
-use crate::ast::use_item::UseItem;
-use crate::ast::value::Value;
-use crate::lexer::Lexer;
-use crate::parser::Parser;
-use crate::runtime_error::RuntimeError;
+use crate::frontend::lexer::Lexer;
+use crate::frontend::parser::Parser;
+use crate::lang::{node::Node, program::Program, use_item::UseItem, value::Value};
+use crate::runtime::runtime_error::RuntimeError;
 use std::collections::{HashMap, HashSet};
 use std::f64;
 use std::io::{self, BufRead, Write};
@@ -1089,8 +1086,8 @@ impl VM {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexer;
-    use crate::parser::Parser;
+    use crate::frontend::lexer::Lexer;
+    use crate::frontend::parser::Parser;
 
     fn run(source: &str) -> VM {
         let mut lexer = Lexer::new(source);

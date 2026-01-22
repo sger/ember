@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{
-    ast::{node::Node, value::Value},
-    vm::op::Op,
-};
+use crate::bytecode::op::Op;
+use crate::lang::{node::Node, value::Value};
 
 pub struct VmBc {
     stack: Vec<Value>,
@@ -22,5 +20,10 @@ impl VmBc {
             aliases: HashMap::new(),
             compile_cache: HashMap::new(),
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn stack(&self) -> &[Value] {
+        &self.stack
     }
 }

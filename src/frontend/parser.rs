@@ -1,10 +1,10 @@
-use crate::ast::node::Node;
-use crate::ast::program::Program;
-use crate::ast::use_item::UseItem;
-use crate::ast::value::Value;
-use crate::lexer::Spanned;
-use crate::parser_error::ParserError;
-use crate::token::Token;
+use crate::frontend::lexer::{Span, Spanned};
+use crate::frontend::parser_error::ParserError;
+use crate::frontend::token::Token;
+use crate::lang::node::Node;
+use crate::lang::program::Program;
+use crate::lang::use_item::UseItem;
+use crate::lang::value::Value;
 
 /// Recursive-descent parser for Ember.
 ///
@@ -23,7 +23,7 @@ pub struct Parser {
     ///
     /// Used to provide stable source locations for errors that occur after
     /// advancing past the last token or at end-of-file.
-    last_span: Option<crate::lexer::Span>,
+    last_span: Option<Span>,
 }
 
 impl Parser {
@@ -778,7 +778,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexer;
+    use crate::frontend::lexer::Lexer;
 
     fn parse(source: &str) -> Program {
         let mut lexer = Lexer::new(source);
