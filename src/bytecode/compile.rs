@@ -1,6 +1,6 @@
 use crate::{
     bytecode::{CodeObject, Op, ProgramBc, compile_error::CompileError},
-    lang::{node::Node, program::Program, value::Value},
+    lang::{node::Node, program::Program, use_item::UseItem, value::Value},
 };
 
 pub struct Compiler {
@@ -142,19 +142,30 @@ impl Compiler {
                 word: word.clone(),
             }),
 
-            // Definition-time constructs must not appear in runtime position
-            Node::Def { .. } | Node::Module { .. } | Node::Use { .. } | Node::Import(_) => {
-                return Err(CompileError::new(format!(
-                    "definition/module/use/import node appeared in runtime position: {:?}",
-                    node
-                )));
+            // Definition-time constructs - specific error messages
+            Node::Def { name, .. } => {
+                return Err(CompileError::def_in_runtime(name));
             }
 
+            Node::Module { name, .. } => {
+                return Err(CompileError::module_in_runtime(name));
+            }
+
+            Node::Use { module, item } => {
+                let item_name = match item {
+                    UseItem::Single(name) => name.as_str(),
+                    UseItem::All => "*",
+                };
+                return Err(CompileError::use_in_runtime(module, item_name));
+            }
+
+            Node::Import(path) => {
+                return Err(CompileError::import_in_runtime(path));
+            }
+
+            // Catch-all for truly unhandled nodes
             _ => {
-                return Err(CompileError::new(format!(
-                    "compile_node: unhandled node: {:?}",
-                    node
-                )));
+                return Err(CompileError::unhandled(node));
             }
         }
 
