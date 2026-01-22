@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     bytecode::{CodeObject, Op, ProgramBc, compile_error::CompileError},
     lang::{node::Node, program::Program, use_item::UseItem, value::Value},
@@ -12,15 +14,47 @@ impl Compiler {
         Self {
             program_bc: ProgramBc {
                 code: vec![CodeObject::new()],
+                words: HashMap::new(),
             },
         }
     }
 
     pub fn compile_program(mut self, program: &Program) -> Result<ProgramBc, CompileError> {
+        // First pass: compile all word definitions
+        for node in &program.definitions {
+            if let Node::Def { name, body } = node {
+                let mut word_ops = self.compile_nodes(body)?;
+                word_ops.push(Op::Return);
+                self.program_bc.words.insert(name.clone(), word_ops);
+            }
+            // Handle modules
+            if let Node::Module { name, definitions } = node {
+                self.compile_module(name, definitions)?;
+            }
+        }
+
+        // Second pass: compile main
         let mut ops = self.compile_nodes(&program.main)?;
         ops.push(Op::Return);
         self.program_bc.code[0].ops = ops;
+
         Ok(self.program_bc)
+    }
+
+    fn compile_module(
+        &mut self,
+        module_name: &str,
+        definitions: &[Node],
+    ) -> Result<(), CompileError> {
+        for node in definitions {
+            if let Node::Def { name, body } = node {
+                let qualified_name = format!("{}.{}", module_name, name);
+                let mut word_ops = self.compile_nodes(body)?;
+                word_ops.push(Op::Return);
+                self.program_bc.words.insert(qualified_name, word_ops);
+            }
+        }
+        Ok(())
     }
 
     fn compile_node(&mut self, node: &Node, ops: &mut Vec<Op>) -> Result<(), CompileError> {

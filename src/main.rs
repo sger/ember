@@ -165,8 +165,6 @@ fn run_program_bc(program: &crate::lang::program::Program) {
 
     println!("=== BYTECODE PROGRAM ===");
     println!("{:#?}", program_bytecode);
-
-    println!("=== BYTECODE PROGRAM ===");
     print_bc(&program_bytecode);
 
     let mut vm = VmBc::new();
