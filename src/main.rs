@@ -133,7 +133,7 @@ fn run_program(source: &str, filename: &str, bytecode: bool, ast: bool, ast_full
     }
 
     if bytecode {
-        run_program_bc(&program);
+        run_program_bc(&program, filename);
     } else {
         run_program_ast(&program, filename);
     }
@@ -154,7 +154,7 @@ fn run_program_ast(program: &crate::lang::program::Program, filename: &str) {
     }
 }
 
-fn run_program_bc(program: &crate::lang::program::Program) {
+fn run_program_bc(program: &crate::lang::program::Program, filename: &str) {
     let program_bytecode = match Compiler::new().compile_program(program) {
         Ok(program_bytecode) => program_bytecode,
         Err(e) => {
@@ -163,12 +163,13 @@ fn run_program_bc(program: &crate::lang::program::Program) {
         }
     };
 
-    println!("=== BYTECODE PROGRAM ===");
-    println!("{:#?}", program_bytecode);
     print_bc(&program_bytecode);
 
     let mut vm = VmBc::new();
+    vm.set_current_dir(Path::new(filename));
 
-    eprintln!("bytecode VM path not wired yet: need resolve+compile step");
-    std::process::exit(1);
+    if let Err(e) = vm.run_compiled(&program_bytecode) {
+        eprintln!("Runtime error: {}", e);
+        std::process::exit(1);
+    }
 }

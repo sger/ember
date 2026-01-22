@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::bytecode::ProgramBc;
+use crate::bytecode::compile::Compiler;
 use crate::bytecode::op::Op;
+use crate::bytecode::stack_check_error::check_ops;
 use crate::lang::program::Program;
 use crate::lang::{node::Node, value::Value};
 use crate::runtime::runtime_error::RuntimeError;
@@ -109,9 +112,144 @@ impl VmBc {
     pub fn run(&mut self, program: &Program) -> Result<(), RuntimeError> {
         self.reset_execution_state();
 
-        // Process all definitions (including imports, modules, use statements)
         for def in &program.definitions {
             self.process_definition(def)?;
         }
+
+        let main_ops = Self::compile_nodes(&program.main)?;
+        check_ops(&main_ops).map_err(|e| RuntimeError::new(&e.message))?;
+        self.exec_ops(&main_ops)
+    }
+
+    pub fn run_compiled(&mut self, prog: &ProgramBc) -> Result<(), RuntimeError> {
+        self.compiled_cache.extend(prog.words.clone());
+
+        let main = prog
+            .code
+            .get(0)
+            .ok_or_else(|| RuntimeError::new("Bytecode program has no main code object"))?;
+
+        check_ops(&main.ops).map_err(|e| RuntimeError::new(&e.message))?;
+
+        self.reset_execution_state();
+        self.exec_ops(&main.ops)
+    }
+
+    // Execution
+
+    fn check_limits(&mut self) -> Result<(), RuntimeError> {
+        self.steps += 1;
+
+        if let Some(max) = self.config.max_steps {
+            if self.steps > max {
+                return Err(RuntimeError::new(&format!(
+                    "execution step limit exceeded ({})",
+                    max
+                )));
+            }
+        }
+
+        if self.stack.len() > self.config.max_stack_size {
+            return Err(RuntimeError::new(&format!(
+                "stack size limit exceeded ({})",
+                self.config.max_stack_size
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn exec_ops(&mut self, ops: &[Op]) -> Result<(), RuntimeError> {
+        self.call_depth += 1;
+
+        if self.call_depth > self.config.max_call_depth {
+            let context = self.call_stack.last().cloned().unwrap_or_default();
+
+            return Err(RuntimeError::new(&format!(
+                "call depth limit exceeded ({}) - possible infinite recursion{}",
+                self.config.max_call_depth,
+                if context.is_empty() {
+                    String::new()
+                } else {
+                    format!(" in '{}'", context)
+                }
+            )));
+        }
+
+        let result = self.exec_ops_inner(ops);
+
+        self.call_depth -= 1;
+        result
+    }
+
+    fn exec_ops_inner(&mut self, ops: &[Op]) -> Result<(), RuntimeError> {
+        let mut ip: usize = 0;
+
+        while ip < ops.len() {
+            self.check_limits()?;
+
+            match &ops[ip] {
+                // Literals
+                Op::Push(v) => self.push(v.clone()),
+
+                _ => {}
+            }
+
+            ip += 1;
+        }
+
+        Ok(())
+    }
+
+    // Stack helpers
+
+    fn push(&mut self, value: Value) {
+        self.stack.push(value);
+    }
+
+    // Compilation
+
+    fn compile_nodes(nodes: &[Node]) -> Result<Vec<Op>, RuntimeError> {
+        let mut compiler = Compiler::new();
+        compiler
+            .compile_nodes(nodes)
+            .map_err(|e| RuntimeError::new(&e.to_string()))
+    }
+
+    // Definition processing
+
+    fn process_definition(&mut self, def: &Node) -> Result<(), RuntimeError> {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::frontend::{lexer::Lexer, parser::Parser};
+
+    use super::*;
+
+    fn run(source: &str) -> VmBc {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+        let mut vm = VmBc::new();
+        vm.run(&program).unwrap();
+        vm
+    }
+
+    fn run_expect_error(source: &str) -> RuntimeError {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().unwrap();
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+        let mut vm = VmBc::new();
+        vm.run(&program)
+            .expect_err("Expected an error but got success")
+    }
+
+    fn run_get_stack(source: &str) -> Vec<Value> {
+        run(source).stack
     }
 }

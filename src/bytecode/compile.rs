@@ -1,12 +1,32 @@
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    slice::IterMut,
+};
 
 use crate::{
     bytecode::{CodeObject, Op, ProgramBc, compile_error::CompileError},
-    lang::{node::Node, program::Program, use_item::UseItem, value::Value},
+    frontend::{lexer::Lexer, parser::Parser},
+    lang::{
+        node::{self, Node},
+        program::Program,
+        use_item::UseItem,
+        value::Value,
+    },
 };
 
 pub struct Compiler {
+    /// Output bytecode program
     program_bc: ProgramBc,
+
+    /// Accumulated word definitions (as AST nodes, for lazy compilation)
+    words: HashMap<String, Vec<Node>>,
+
+    /// Files already included (prevents duplicates)
+    included: HashSet<PathBuf>,
+
+    /// Aliases from 'use' statements
+    aliases: HashMap<String, String>,
 }
 
 impl Compiler {
@@ -16,29 +36,204 @@ impl Compiler {
                 code: vec![CodeObject::new()],
                 words: HashMap::new(),
             },
+            words: HashMap::new(),
+            included: HashSet::new(),
+            aliases: HashMap::new(),
         }
     }
 
+    pub fn compile_from_file(mut self, path: &Path) -> Result<ProgramBc, CompileError> {
+        // Load the file and all its imports (recursively)
+        let main_program = self.load_file_recursive(path)?;
+
+        // Clone the words HashMap to avoid borrow checker issues
+        // (We need to iterate over words while calling compile_nodes which borrows self mutably)
+        let words_to_compile: Vec<(String, Vec<Node>)> = self
+            .words
+            .iter()
+            .map(|(name, body)| (name.clone(), body.clone()))
+            .collect();
+
+        // Now compile all words to bytecode
+        for (name, body) in words_to_compile {
+            let mut word_ops = self.compile_nodes(&body)?;
+            word_ops.push(Op::Return);
+            self.program_bc.words.insert(name, word_ops);
+        }
+
+        // Compile main
+        let mut main_ops = self.compile_nodes(&main_program)?;
+        main_ops.push(Op::Return);
+        self.program_bc.code[0].ops = main_ops;
+
+        Ok(self.program_bc)
+    }
+
+    /// Compile from AST (for backward compatibility, REPL, testing)
+    /// Does NOT handle imports - use compile_from_file for that
     pub fn compile_program(mut self, program: &Program) -> Result<ProgramBc, CompileError> {
-        // First pass: compile all word definitions
-        for node in &program.definitions {
-            if let Node::Def { name, body } = node {
-                let mut word_ops = self.compile_nodes(body)?;
-                word_ops.push(Op::Return);
-                self.program_bc.words.insert(name.clone(), word_ops);
-            }
-            // Handle modules
-            if let Node::Module { name, definitions } = node {
-                self.compile_module(name, definitions)?;
+        // Process definitions
+        for def in &program.definitions {
+            self.process_definition(def, None)?;
+        }
+
+        // Clone words to avoid borrow checker issues
+        let words_to_compile: Vec<(String, Vec<Node>)> = self
+            .words
+            .iter()
+            .map(|(name, body)| (name.clone(), body.clone()))
+            .collect();
+
+        // Compile accumulated words
+        for (name, body) in words_to_compile {
+            let mut word_ops = self.compile_nodes(&body)?;
+            word_ops.push(Op::Return);
+            self.program_bc.words.insert(name, word_ops);
+        }
+
+        // Compile main
+        let mut main_ops = self.compile_nodes(&program.main)?;
+        main_ops.push(Op::Return);
+        self.program_bc.code[0].ops = main_ops;
+
+        Ok(self.program_bc)
+    }
+
+    fn load_file_recursive(&mut self, path: &Path) -> Result<Vec<Node>, CompileError> {
+        // Normalize to .em extension
+        let mut path_buf = path.to_path_buf();
+
+        if path_buf.extension().is_none() {
+            path_buf.set_extension("em");
+        }
+
+        // Canonicalize to absolute path
+        let canonical = path_buf.canonicalize().map_err(|e| {
+            CompileError::new(&format!("cannot find file '{}': {}", path.display(), e))
+        })?;
+
+        // Already included? Skip (prevents infinite loops and duplicate definitions)
+        if !self.included.insert(canonical.clone()) {
+            return Ok(Vec::new()); // Return empty - already processed
+        }
+
+        // Get base directory for resolving imports
+        let base_dir = canonical
+            .parent()
+            .ok_or_else(|| CompileError::new("cannot get parent directory"))?;
+
+        // Read and parse
+        let source = std::fs::read_to_string(&canonical).map_err(|e| {
+            CompileError::new(&format!("cannot read '{}': {}", canonical.display(), e))
+        })?;
+
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer
+            .tokenize()
+            .map_err(|e| CompileError::new(&format!("in '{}': {}", canonical.display(), e)))?;
+
+        let mut parser = Parser::new(tokens);
+        let program = parser
+            .parse()
+            .map_err(|e| CompileError::new(&format!("in '{}': {}", canonical.display(), e)))?;
+
+        // Process imports FIRST (depth-first, like Forth INCLUDE)
+        for def in &program.definitions {
+            if let Node::Import(import_path) = def {
+                let import_full = base_dir.join(import_path);
+                self.load_file_recursive(&import_full)?;
+                // Note: we discard the result because definitions are accumulated
+                // in self.words, not returned
             }
         }
 
-        // Second pass: compile main
-        let mut ops = self.compile_nodes(&program.main)?;
-        ops.push(Op::Return);
-        self.program_bc.code[0].ops = ops;
+        // Now process definitions from THIS file
+        for def in &program.definitions {
+            self.process_definition(def, Some(&canonical))?;
+        }
 
-        Ok(self.program_bc)
+        // Return main code (only meaningful for the top-level file)
+        Ok(program.main)
+    }
+
+    fn process_definition(
+        &mut self,
+        def: &Node,
+        source_file: Option<&Path>,
+    ) -> Result<(), CompileError> {
+        match def {
+            Node::Def { name, body } => {
+                if let Some(existing) = self.words.get(name) {
+                    // Allow redefinition with a warning (Forth-style)
+                    // In production, you might want to make this an error
+                    eprintln!(
+                        "Warning: redefining word '{}' {}",
+                        name,
+                        if let Some(path) = source_file {
+                            format!("in {}", path.display())
+                        } else {
+                            String::new()
+                        }
+                    );
+                }
+
+                self.words.insert(name.clone(), body.clone());
+            }
+
+            Node::Module {
+                name: module_name,
+                definitions,
+            } => {
+                for inner_def in definitions {
+                    if let Node::Def {
+                        name: word_name,
+                        body,
+                    } = inner_def
+                    {
+                        let qualified = format!("{}.{}", module_name, word_name);
+                        self.words.insert(qualified, body.clone());
+                    }
+                }
+            }
+
+            Node::Use { module, item } => match item {
+                UseItem::Single(word) => {
+                    let qualified = format!("{}.{}", module, word);
+
+                    self.aliases.insert(word.clone(), qualified);
+                }
+
+                UseItem::All => {
+                    let prefix = format!("{}.", module);
+                    let matching: Vec<_> = self
+                        .words
+                        .keys()
+                        .filter(|k| k.starts_with(&prefix))
+                        .cloned()
+                        .collect();
+
+                    for qualified in matching {
+                        let word = qualified.strip_prefix(&prefix).unwrap();
+                        self.aliases.insert(word.to_string(), qualified);
+                    }
+                }
+            },
+
+            Node::Import(_) => {}
+
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    pub fn compile_nodes(&mut self, nodes: &[Node]) -> Result<Vec<Op>, CompileError> {
+        let mut ops = Vec::new();
+        for node in nodes {
+            self.compile_node(node, &mut ops)?;
+        }
+
+        Ok(ops)
     }
 
     fn compile_module(
@@ -204,14 +399,6 @@ impl Compiler {
         }
 
         Ok(())
-    }
-
-    fn compile_nodes(&mut self, nodes: &[Node]) -> Result<Vec<Op>, CompileError> {
-        let mut ops = Vec::new();
-        for node in nodes {
-            self.compile_node(node, &mut ops)?;
-        }
-        Ok(ops)
     }
 
     fn compile_value(&mut self, value: &Value) -> Result<Value, CompileError> {
