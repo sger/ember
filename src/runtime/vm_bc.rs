@@ -28,18 +28,7 @@ impl Default for VmBcConfig {
 
 pub struct VmBc {
     stack: Vec<Value>,
-    // Word definitions (AST form, from parser/resolver)
-    words: HashMap<String, Vec<Node>>,
-    // Aliases from 'use' statements: "word" -> "Module.word"
-    aliases: HashMap<String, String>,
-    // Compilation cache: fully qualified name -> compiled ops
-    compiled_cache: HashMap<String, Vec<Op>>,
-
-    // Import tracking
-    imported: HashSet<PathBuf>,
-    current_dir: Option<PathBuf>,
-    imported_programs: Vec<(PathBuf, Program)>,
-
+    words: HashMap<String, Vec<Op>>,
     // Safety limits
     config: VmBcConfig,
     call_depth: usize,
@@ -56,11 +45,6 @@ impl VmBc {
         Self {
             stack: Vec::new(),
             words: HashMap::new(),
-            aliases: HashMap::new(),
-            compiled_cache: HashMap::new(),
-            imported: HashSet::new(),
-            current_dir: None,
-            imported_programs: Vec::new(),
             config,
             call_depth: 0,
             call_stack: Vec::new(),
@@ -73,65 +57,24 @@ impl VmBc {
         &self.stack
     }
 
-    pub fn words_snapshot(&self) -> HashMap<String, Vec<Node>> {
-        self.words.clone()
-    }
-
-    pub fn aliases_snapshot(&self) -> HashMap<String, String> {
-        self.aliases.clone()
-    }
-
-    pub fn imported_programs_snapshot(&self) -> Vec<(PathBuf, Program)> {
-        self.imported_programs.clone()
-    }
-
-    #[allow(dead_code)]
-    pub fn clear_cache(&mut self) {
-        self.compiled_cache.clear();
-    }
-
-    #[allow(dead_code)]
-    pub fn cache_stats(&self) -> (usize, usize) {
-        (self.compiled_cache.len(), self.words.len())
-    }
-
-    pub fn set_current_dir(&mut self, path: &Path) {
-        self.current_dir = if path.is_dir() {
-            Some(path.to_path_buf())
-        } else {
-            path.parent().map(|p| p.to_path_buf())
-        }
-    }
-
     pub fn reset_execution_state(&mut self) {
         self.steps = 0;
         self.call_depth = 0;
         self.call_stack.clear();
     }
 
-    pub fn run(&mut self, program: &Program) -> Result<(), RuntimeError> {
+    pub fn run_compiled(&mut self, prog: &ProgramBc) -> Result<(), RuntimeError> {
         self.reset_execution_state();
 
-        for def in &program.definitions {
-            self.process_definition(def)?;
-        }
-
-        let main_ops = Self::compile_nodes(&program.main)?;
-        check_ops(&main_ops).map_err(|e| RuntimeError::new(&e.message))?;
-        self.exec_ops(&main_ops)
-    }
-
-    pub fn run_compiled(&mut self, prog: &ProgramBc) -> Result<(), RuntimeError> {
-        self.compiled_cache.extend(prog.words.clone());
+        self.words = prog.words.clone();
 
         let main = prog
             .code
             .get(0)
-            .ok_or_else(|| RuntimeError::new("Bytecode program has no main code object"))?;
+            .ok_or_else(|| RuntimeError::new("bytecode program has no main code object"))?;
 
         check_ops(&main.ops).map_err(|e| RuntimeError::new(&e.message))?;
 
-        self.reset_execution_state();
         self.exec_ops(&main.ops)
     }
 
@@ -192,8 +135,46 @@ impl VmBc {
                 // Literals
                 Op::Push(v) => self.push(v.clone()),
 
-                _ => {
-                    println!("error");
+                // Stack operations
+                Op::Dup => {
+                    let a = self.pop()?;
+                    self.push(a.clone());
+                    self.push(a);
+                }
+
+                // Comparison
+                Op::Eq => {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    self.push(Value::Bool(a == b));
+                }
+                Op::Le => {
+                    let (b, a) = self.pop_two_numeric()?;
+                    self.push(Value::Bool(a <= b));
+                }
+
+                // I/O
+                Op::Print => {
+                    let value = self.pop()?;
+                    println!("{}", value);
+                }
+
+                // User defined words
+                Op::CallWord(name) => {
+                    self.call_stack.push(name.clone());
+                    let ops =
+                        self.words.get(name).cloned().ok_or_else(|| {
+                            RuntimeError::new(&format!("undefined word: {}", name))
+                        })?;
+                    let result = self.exec_ops(&ops);
+                    self.call_stack.pop();
+                    result.map_err(|e| e.with_context(name))?;
+                }
+
+                Op::Return => break,
+
+                other => {
+                    return Err(RuntimeError::new(&format!("unhandled node: {:?}", other)));
                 }
             }
 
@@ -203,10 +184,43 @@ impl VmBc {
         Ok(())
     }
 
-    // Stack helpers
+    // Stack operations
 
     fn push(&mut self, value: Value) {
         self.stack.push(value);
+    }
+
+    fn pop(&mut self) -> Result<Value, RuntimeError> {
+        self.stack
+            .pop()
+            .ok_or_else(|| RuntimeError::new("stack underflow"))
+    }
+
+    fn pop_two_numeric(&mut self) -> Result<(f64, f64), RuntimeError> {
+        let b = self.pop()?;
+        let a = self.pop()?;
+        let b_f = match &b {
+            Value::Integer(n) => *n as f64,
+            Value::Float(n) => *n,
+            other => {
+                return Err(RuntimeError::new(&format!(
+                    "expected number, got {}",
+                    other
+                )));
+            }
+        };
+        let a_f = match &a {
+            Value::Integer(n) => *n as f64,
+            Value::Float(n) => *n,
+            other => {
+                return Err(RuntimeError::new(&format!(
+                    "expected number, got {}",
+                    other
+                )));
+            }
+        };
+
+        Ok((b_f, a_f))
     }
 
     // Compilation
@@ -222,36 +236,5 @@ impl VmBc {
 
     fn process_definition(&mut self, def: &Node) -> Result<(), RuntimeError> {
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::frontend::{lexer::Lexer, parser::Parser};
-
-    use super::*;
-
-    fn run(source: &str) -> VmBc {
-        let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
-        let mut vm = VmBc::new();
-        vm.run(&program).unwrap();
-        vm
-    }
-
-    fn run_expect_error(source: &str) -> RuntimeError {
-        let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize().unwrap();
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
-        let mut vm = VmBc::new();
-        vm.run(&program)
-            .expect_err("Expected an error but got success")
-    }
-
-    fn run_get_stack(source: &str) -> Vec<Value> {
-        run(source).stack
     }
 }
