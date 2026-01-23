@@ -102,6 +102,12 @@ fn effect(op: &Op) -> Option<(i32, i32)> {
         ToString => (1, 1),
         ToInt => (1, 1),
 
+        // Aux stack ops - from main stack perspective:
+        // ToAux pops 1 from main, pushes 0 to main (moves to aux)
+        // FromAux pops 0 from main, pushes 1 to main (moves from aux)
+        ToAux => (1, 0),
+        FromAux => (0, 1),
+
         Return => (0, 0),
 
         // Unknown effect - can't statically analyze

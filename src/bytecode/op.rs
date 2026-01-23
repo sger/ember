@@ -119,4 +119,12 @@ pub enum Op {
         module: String,
         word: String,
     },
+
+    // ==========================================================================
+    // Auxiliary stack operations (for internal use by compiler)
+    // ==========================================================================
+    /// Move top of main stack to auxiliary stack
+    ToAux,
+    /// Move top of auxiliary stack to main stack
+    FromAux,
 }

@@ -26,6 +26,7 @@ impl Default for VmBcConfig {
 
 pub struct VmBc {
     stack: Vec<Value>,
+    pub aux_stack: Vec<Value>,
     words: HashMap<String, Vec<Op>>,
     // Safety limits
     config: VmBcConfig,
@@ -42,6 +43,7 @@ impl VmBc {
     pub fn with_config(config: VmBcConfig) -> Self {
         Self {
             stack: Vec::new(),
+            aux_stack: Vec::new(),
             words: HashMap::new(),
             config,
             call_depth: 0,
@@ -796,6 +798,19 @@ impl VmBc {
                     let result = self.exec_ops(&ops);
                     self.call_stack.pop();
                     result.map_err(|e| e.with_context(&qualified))?;
+                }
+
+                Op::ToAux => {
+                    let val = self.pop()?;
+                    self.aux_stack.push(val);
+                }
+
+                Op::FromAux => {
+                    let val = self
+                        .aux_stack
+                        .pop()
+                        .ok_or_else(|| RuntimeError::new("auxiliary stack underflow"))?;
+                    self.push(val);
                 }
 
                 Op::Return => break,
@@ -3297,25 +3312,25 @@ mod integration_tests {
     // The issue: "3 [10] times" should push 10 three times, but instead
     // it hits stack size limit (10000), suggesting infinite loop or wrong count
     //
-    // #[test]
-    // fn times_basic() {
-    //     assert_stack("3 [10] times", vec![int(10), int(10), int(10)]);
-    // }
-    //
-    // #[test]
-    // fn times_with_operation() {
-    //     assert_stack("0 5 [1 +] times", vec![int(5)]);
-    // }
-    //
-    // #[test]
-    // fn times_multiply() {
-    //     assert_stack("1 4 [2 *] times", vec![int(16)]);
-    // }
+    #[test]
+    fn times_basic() {
+        assert_stack("3 [10] times", vec![int(10), int(10), int(10)]);
+    }
 
-    // #[test]
-    // fn times_zero() {
-    //     assert_stack("42 0 [drop 99] times", vec![int(42)]);
-    // }
+    #[test]
+    fn times_with_operation() {
+        assert_stack("0 5 [1 +] times", vec![int(5)]);
+    }
+
+    #[test]
+    fn times_multiply() {
+        assert_stack("1 4 [2 *] times", vec![int(16)]);
+    }
+
+    #[test]
+    fn times_zero() {
+        assert_stack("42 0 [drop 99] times", vec![int(42)]);
+    }
 
     #[test]
     fn each() {

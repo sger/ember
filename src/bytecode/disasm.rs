@@ -107,6 +107,10 @@ fn print_op(op: &Op, ip: usize, indent: usize) {
         Op::Over => println!("OVER"),
         Op::Rot => println!("ROT"),
 
+        // Auxiliary stack operations
+        Op::ToAux => println!("TO_AUX      ; ( a -- ) R:( -- a )"),
+        Op::FromAux => println!("FROM_AUX    ; ( -- a ) R:( a -- )"),
+
         // Arithmetic
         Op::Add => println!("ADD"),
         Op::Sub => println!("SUB"),
@@ -349,6 +353,8 @@ pub fn disassemble_to_string(ops: &[Op]) -> String {
 fn format_op_string(op: &Op, ip: usize) -> String {
     match op {
         Op::Push(v) => format!("PUSH        {}", format_value(v)),
+        Op::ToAux => "TO_AUX".to_string(),
+        Op::FromAux => "FROM_AUX".to_string(),
         Op::Jump(offset) => {
             let target = (ip as i32 + *offset) as usize;
             format!("JUMP        {:+} (→ {:04})", offset, target)
@@ -429,6 +435,8 @@ fn op_name(op: &Op) -> &'static str {
         Op::Swap => "SWAP",
         Op::Over => "OVER",
         Op::Rot => "ROT",
+        Op::ToAux => "TO_AUX",
+        Op::FromAux => "FROM_AUX",
         Op::Add => "ADD",
         Op::Sub => "SUB",
         Op::Mul => "MUL",
@@ -582,5 +590,20 @@ mod tests {
         // 1 outer PUSH + 2 inner PUSH = 3 total
         assert_eq!(counts.get("PUSH"), Some(&3));
         assert_eq!(counts.get("ADD"), Some(&1));
+    }
+
+    #[test]
+    fn test_aux_stack_ops_disassemble() {
+        let ops = vec![
+            Op::Push(Value::Integer(5)),
+            Op::ToAux,
+            Op::Push(Value::Integer(10)),
+            Op::FromAux,
+            Op::Add,
+        ];
+
+        let output = disassemble_to_string(&ops);
+        assert!(output.contains("TO_AUX"));
+        assert!(output.contains("FROM_AUX"));
     }
 }
