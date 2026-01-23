@@ -2,10 +2,15 @@ use crate::bytecode::ProgramBc;
 use crate::bytecode::compile::Compiler;
 use crate::bytecode::op::Op;
 use crate::bytecode::stack_check_error::check_ops;
+use crate::frontend::lexer::Span;
 use crate::lang::{node::Node, value::Value};
-use crate::runtime::runtime_error::RuntimeError;
+use crate::runtime::runtime_error::{
+    RuntimeError, division_by_zero, index_out_of_bounds, stack_underflow, type_error,
+    undefined_word,
+};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct VmBcConfig {
@@ -33,6 +38,8 @@ pub struct VmBc {
     call_depth: usize,
     call_stack: Vec<String>,
     steps: usize,
+    pub source: Option<String>,
+    pub file: Option<PathBuf>,
 }
 
 impl VmBc {
@@ -49,7 +56,35 @@ impl VmBc {
             call_depth: 0,
             call_stack: Vec::new(),
             steps: 0,
+            source: None,
+            file: None,
         }
+    }
+
+    // NEW: Setters for source tracking
+    pub fn set_source(&mut self, source: String) {
+        self.source = Some(source);
+    }
+
+    pub fn set_file(&mut self, file: PathBuf) {
+        self.file = Some(file);
+    }
+
+    // NEW: Helper to create errors with source context
+    fn error_with_context(&self, message: impl Into<String>) -> RuntimeError {
+        RuntimeError::new(&message.into())
+            .with_span(Span { line: 1, col: 1 })
+            .with_source(self.source.clone().unwrap_or_default())
+            .with_file(self.file.clone().unwrap_or_default())
+    }
+
+    // NEW: Helper for type errors
+    fn type_error_with_context(&self, expected: &str, got: &str) -> RuntimeError {
+        self.error_with_context(format!("type error: expected {}, got {}", expected, got))
+            .with_help(format!(
+                "This operation requires a {} value, but received a {}",
+                expected, got
+            ))
     }
 
     #[allow(dead_code)]
@@ -174,9 +209,20 @@ impl VmBc {
                         (Value::Float(a), Value::Float(b)) => Value::Float(a + b),
                         (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 + b),
                         (Value::Float(a), Value::Integer(b)) => Value::Float(a + *b as f64),
-                        _ => return Err(RuntimeError::new(&format!("cannot add {} and {}", a, b))),
+                        _ => {
+                            return Err(self
+                                .error_with_context(format!(
+                                    "type error: cannot add {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ))
+                                .with_help(format!(
+                                    "Addition works on numbers, but got {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                )));
+                        }
                     };
-
                     self.push(result);
                 }
                 Op::Sub => {
@@ -188,13 +234,13 @@ impl VmBc {
                         (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 - b),
                         (Value::Float(a), Value::Integer(b)) => Value::Float(a - *b as f64),
                         _ => {
-                            return Err(RuntimeError::new(&format!(
-                                "cannot subtract {} and {}",
-                                a, b
+                            return Err(self.error_with_context(format!(
+                                "type error: cannot subtract {} from {}",
+                                b.type_name(),
+                                a.type_name()
                             )));
                         }
                     };
-
                     self.push(result);
                 }
                 Op::Mul => {
@@ -206,9 +252,10 @@ impl VmBc {
                         (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 * b),
                         (Value::Float(a), Value::Integer(b)) => Value::Float(a * *b as f64),
                         _ => {
-                            return Err(RuntimeError::new(&format!(
-                                "cannot multiply {} and {}",
-                                a, b
+                            return Err(self.error_with_context(format!(
+                                "type error: cannot multiply {} and {}",
+                                a.type_name(),
+                                b.type_name()
                             )));
                         }
                     };
@@ -220,32 +267,41 @@ impl VmBc {
                     let result = match (&a, &b) {
                         (Value::Integer(a), Value::Integer(b)) => {
                             if *b == 0 {
-                                return Err(RuntimeError::new("division by zero"));
+                                return Err(division_by_zero()
+                                    .with_source(self.source.clone().unwrap_or_default())
+                                    .with_file(self.file.clone().unwrap_or_default()));
                             }
                             Value::Integer(a / b)
                         }
                         (Value::Float(a), Value::Float(b)) => {
                             if *b == 0.0 {
-                                return Err(RuntimeError::new("division by zero"));
+                                return Err(division_by_zero()
+                                    .with_source(self.source.clone().unwrap_or_default())
+                                    .with_file(self.file.clone().unwrap_or_default()));
                             }
                             Value::Float(a / b)
                         }
                         (Value::Integer(a), Value::Float(b)) => {
                             if *b == 0.0 {
-                                return Err(RuntimeError::new("division by zero"));
+                                return Err(division_by_zero()
+                                    .with_source(self.source.clone().unwrap_or_default())
+                                    .with_file(self.file.clone().unwrap_or_default()));
                             }
                             Value::Float(*a as f64 / b)
                         }
                         (Value::Float(a), Value::Integer(b)) => {
                             if *b == 0 {
-                                return Err(RuntimeError::new("division by zero"));
+                                return Err(division_by_zero()
+                                    .with_source(self.source.clone().unwrap_or_default())
+                                    .with_file(self.file.clone().unwrap_or_default()));
                             }
                             Value::Float(a / *b as f64)
                         }
                         _ => {
-                            return Err(RuntimeError::new(&format!(
-                                "cannot divide {} and {}",
-                                a, b
+                            return Err(self.error_with_context(format!(
+                                "type error: cannot divide {} by {}",
+                                a.type_name(),
+                                b.type_name()
                             )));
                         }
                     };
@@ -255,7 +311,9 @@ impl VmBc {
                     let b = self.pop_int()?;
                     let a = self.pop_int()?;
                     if b == 0 {
-                        return Err(RuntimeError::new("modulo by zero"));
+                        return Err(self
+                            .error_with_context("modulo by zero")
+                            .with_help("Check that the divisor is not zero"));
                     }
                     self.push(Value::Integer(a % b));
                 }
@@ -326,8 +384,25 @@ impl VmBc {
 
                 // List operations
                 Op::Len => {
-                    let list = self.pop_list()?;
-                    self.push(Value::Integer(list.len() as i64));
+                    let value = self.pop()?;
+                    match value {
+                        Value::List(list) => {
+                            self.push(Value::Integer(list.len() as i64));
+                        }
+                        Value::String(s) => {
+                            self.push(Value::Integer(s.len() as i64));
+                        }
+                        other => {
+                            return Err(self
+                                .error_with_context(format!(
+                                    "type error: expected list or string, got {}",
+                                    other.type_name()
+                                ))
+                                .with_help(
+                                    "Use 'len' on lists or strings. Example: \"hello\" len  or  { 1 2 3 } len"
+                                ));
+                        }
+                    }
                 }
                 Op::Head => {
                     let list = self.pop_list()?;
@@ -446,13 +521,13 @@ impl VmBc {
                 Op::Nth => {
                     let idx = self.pop_int()?;
                     let list = self.pop_list()?;
+
                     if idx < 0 || idx as usize >= list.len() {
-                        return Err(RuntimeError::new(&format!(
-                            "index {} out of bounds for list of length {}",
-                            idx,
-                            list.len()
-                        )));
+                        return Err(index_out_of_bounds(idx, list.len())
+                            .with_source(self.source.clone().unwrap_or_default())
+                            .with_file(self.file.clone().unwrap_or_default()));
                     }
+
                     self.push(list[idx as usize].clone());
                 }
                 Op::Append => {
@@ -780,13 +855,23 @@ impl VmBc {
                 // User-defined words - SIMPLIFIED (just lookup)
                 Op::CallWord(name) => {
                     self.call_stack.push(name.clone());
-                    let ops =
-                        self.words.get(name).cloned().ok_or_else(|| {
-                            RuntimeError::new(&format!("undefined word: {}", name))
-                        })?;
+
+                    let ops = self.words.get(name).cloned().ok_or_else(|| {
+                        undefined_word(name)
+                            .with_source(self.source.clone().unwrap_or_default())
+                            .with_file(self.file.clone().unwrap_or_default())
+                    })?;
+
                     let result = self.exec_ops(&ops);
                     self.call_stack.pop();
-                    result.map_err(|e| e.with_context(name))?;
+
+                    result.map_err(|e| {
+                        if e.call_stack.is_empty() {
+                            e.with_context(name)
+                        } else {
+                            e
+                        }
+                    })?;
                 }
 
                 Op::CallQualified { module, word } => {
@@ -833,18 +918,17 @@ impl VmBc {
     }
 
     fn pop(&mut self) -> Result<Value, RuntimeError> {
-        self.stack
-            .pop()
-            .ok_or_else(|| RuntimeError::new("stack underflow"))
+        self.stack.pop().ok_or_else(|| {
+            stack_underflow(1, 0)
+                .with_source(self.source.clone().unwrap_or_default())
+                .with_file(self.file.clone().unwrap_or_default())
+        })
     }
 
     fn pop_int(&mut self) -> Result<i64, RuntimeError> {
         match self.pop()? {
             Value::Integer(n) => Ok(n),
-            other => Err(RuntimeError::new(&format!(
-                "expected integer, got {}",
-                other
-            ))),
+            other => Err(self.type_error_with_context("integer", other.type_name())),
         }
     }
 
@@ -878,37 +962,28 @@ impl VmBc {
     fn pop_bool(&mut self) -> Result<bool, RuntimeError> {
         match self.pop()? {
             Value::Bool(b) => Ok(b),
-            other => Err(RuntimeError::new(&format!(
-                "expected boolean, got {}",
-                other
-            ))),
+            other => Err(self.type_error_with_context("boolean", other.type_name())),
         }
     }
 
     fn pop_list(&mut self) -> Result<Vec<Value>, RuntimeError> {
         match self.pop()? {
             Value::List(items) => Ok(items),
-            other => Err(RuntimeError::new(&format!("expected list, got {}", other))),
+            other => Err(self.type_error_with_context("list", other.type_name())),
         }
     }
 
     fn pop_string(&mut self) -> Result<String, RuntimeError> {
         match self.pop()? {
             Value::String(s) => Ok(s),
-            other => Err(RuntimeError::new(&format!(
-                "expected string, got {}",
-                other
-            ))),
+            other => Err(self.type_error_with_context("string", other.type_name())),
         }
     }
 
     fn pop_quotation_ops(&mut self) -> Result<Vec<Op>, RuntimeError> {
         match self.pop()? {
             Value::CompiledQuotation(ops) => Ok(ops),
-            other => Err(RuntimeError::new(&format!(
-                "expected quotation, got {}",
-                other
-            ))),
+            other => Err(self.type_error_with_context("quotation", other.type_name())),
         }
     }
 }

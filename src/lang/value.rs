@@ -54,3 +54,18 @@ impl std::fmt::Display for Value {
         }
     }
 }
+
+impl Value {
+    /// Get a human-readable type name for error messages
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Integer(_) => "integer",
+            Value::Float(_) => "float",
+            Value::String(_) => "string",
+            Value::Bool(_) => "boolean",
+            Value::List(_) => "list",
+            Value::Quotation(_) => "quotation",
+            Value::CompiledQuotation(_) => "compiled quotation",
+        }
+    }
+}

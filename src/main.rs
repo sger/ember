@@ -104,6 +104,15 @@ fn print_usage() {
 fn run_from_source(path: &Path, ast: bool, save_bc: bool, disasm: bool) {
     println!("Compiling {}...", path.display());
 
+    // Read source for error reporting
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to read '{}': {}", path.display(), e);
+            std::process::exit(1);
+        }
+    };
+
     let compiler = Compiler::new();
     let bytecode = match compiler.compile_from_file(path) {
         Ok(bc) => bc,
@@ -136,8 +145,8 @@ fn run_from_source(path: &Path, ast: bool, save_bc: bool, disasm: bool) {
         }
     }
 
-    println!("\nExecuting...\n");
-    execute_bytecode(&bytecode);
+    println!("Executing...");
+    execute_bytecode_with_source(&bytecode, source, path);
 }
 
 fn run_from_bytecode(path: &Path, disasm: bool) {
@@ -168,6 +177,20 @@ fn execute_bytecode(bytecode: &ProgramBc) {
 
     if let Err(e) = vm.run_compiled(bytecode) {
         eprintln!("\nRuntime error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn execute_bytecode_with_source(bytecode: &ProgramBc, source: String, path: &Path) {
+    let mut vm = VmBc::new();
+
+    // Set source and file for better error messages
+    vm.set_source(source);
+    vm.set_file(path.to_path_buf());
+
+    if let Err(e) = vm.run_compiled(bytecode) {
+        // Use display_with_context for beautiful error output
+        eprintln!("{}", e);
         std::process::exit(1);
     }
 }
