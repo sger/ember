@@ -163,9 +163,8 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         match def {
             Node::Def { name, body } => {
-                if let Some(existing) = self.words.get(name) {
+                if self.words.contains_key(name) {
                     // Allow redefinition with a warning (Forth-style)
-                    // In production, you might want to make this an error
                     eprintln!(
                         "Warning: redefining word '{}' {}",
                         name,
@@ -177,7 +176,21 @@ impl Compiler {
                     );
                 }
 
-                self.words.insert(name.clone(), body.clone());
+                // FIX: Unwrap inline quotation syntax: def name [body]
+                // If body is exactly one node and it's a quotation literal,
+                // use the quotation's contents as the body instead.
+                // This allows: def double [dup +]  to work like: def double dup + end
+                let actual_body = if body.len() == 1 {
+                    if let Node::Literal(Value::Quotation(inner)) = &body[0] {
+                        inner.clone()
+                    } else {
+                        body.clone()
+                    }
+                } else {
+                    body.clone()
+                };
+
+                self.words.insert(name.clone(), actual_body);
             }
 
             Node::Module {
@@ -363,7 +376,13 @@ impl Compiler {
 
             // Word calls
             Node::Word(name) => {
-                ops.push(Op::CallWord(name.clone()));
+                // Check if this word has an alias (from 'use' statements)
+                let resolved = self
+                    .aliases
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| name.clone());
+                ops.push(Op::CallWord(resolved));
             }
 
             Node::QualifiedWord { module, word } => ops.push(Op::CallQualified {
