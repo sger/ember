@@ -1,18 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    slice::IterMut,
 };
 
 use crate::{
     bytecode::{CodeObject, Op, ProgramBc, compile_error::CompileError},
     frontend::{lexer::Lexer, parser::Parser},
-    lang::{
-        node::{self, Node},
-        program::Program,
-        use_item::UseItem,
-        value::Value,
-    },
+    lang::{node::Node, program::Program, use_item::UseItem, value::Value},
 };
 
 pub struct Compiler {
