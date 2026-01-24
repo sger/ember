@@ -1,5 +1,5 @@
-use crate::lexer::Spanned;
-use crate::token::Token;
+use crate::frontend::lexer::Spanned;
+use crate::frontend::token::Token;
 
 pub struct TokenDumper {
     pub color: bool,
