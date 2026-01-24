@@ -10,3 +10,5 @@
 1 2 3 swap print   ;  2
 1 2 dup print      ;  2
 1 2 3 drop print   ;  2
+
+5 2 * print

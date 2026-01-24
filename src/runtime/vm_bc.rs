@@ -1,12 +1,10 @@
 use crate::bytecode::ProgramBc;
-use crate::bytecode::compile::Compiler;
 use crate::bytecode::op::Op;
 use crate::bytecode::stack_check_error::check_ops;
 use crate::frontend::lexer::Span;
-use crate::lang::{node::Node, value::Value};
+use crate::lang::value::Value;
 use crate::runtime::runtime_error::{
-    RuntimeError, division_by_zero, index_out_of_bounds, stack_underflow, type_error,
-    undefined_word,
+    RuntimeError, division_by_zero, index_out_of_bounds, stack_underflow, undefined_word,
 };
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
@@ -188,6 +186,7 @@ impl VmBc {
                 Op::Over => {
                     let b = self.pop()?;
                     let a = self.pop()?;
+                    self.push(a.clone());
                     self.push(b);
                     self.push(a);
                 }
@@ -899,10 +898,6 @@ impl VmBc {
                 }
 
                 Op::Return => break,
-
-                other => {
-                    return Err(RuntimeError::new(&format!("unhandled node: {:?}", other)));
-                }
             }
 
             ip += 1;
@@ -1163,7 +1158,7 @@ mod tests {
                 Op::Push(Value::Integer(2)),
                 Op::Over,
             ],
-            vec![Value::Integer(2), Value::Integer(1)],
+            vec![Value::Integer(1), Value::Integer(2), Value::Integer(1)],
         );
     }
 
@@ -3031,7 +3026,7 @@ mod integration_tests {
         // Traditional Forth: 1 2 over -> 1 2 1 (copy second to top)
         // Current EMBER: 1 2 over -> 2 1 (swaps)
         // The comments document what these operations should do in case you want to implement them later. The over bug in particular is worth noting - in standard Forth/Factor, over copies the second element to the top (a b -- a b a), but your current implementation swaps (a b -- b a).
-        assert_stack("1 2 over", vec![int(2), int(1)]);
+        assert_stack("1 2 over", vec![int(1), int(2), int(1)]);
     }
 
     #[test]
@@ -3634,50 +3629,50 @@ mod integration_tests {
         assert_stack(code, vec![int(120)]);
     }
 
-    // #[test]
-    // fn word_multiple() {
-    //     assert_stack(
-    //         "def inc [1 +] end def double [dup +] end 5 inc double",
-    //         vec![int(12)],
-    //     );
-    // }
+    #[test]
+    fn word_multiple() {
+        assert_stack(
+            "def inc [1 +] end def double [dup +] end 5 inc double",
+            vec![int(12)],
+        );
+    }
 
-    // #[test]
-    // fn word_calling_word() {
-    //     assert_stack(
-    //         "def inc [1 +] end def inc2 [inc inc] end 5 inc2",
-    //         vec![int(7)],
-    //     );
-    // }
+    #[test]
+    fn word_calling_word() {
+        assert_stack(
+            "def inc [1 +] end def inc2 [inc inc] end 5 inc2",
+            vec![int(7)],
+        );
+    }
 
-    // #[test]
-    // fn word_recursive_factorial() {
-    //     let code = r#"
-    //         def factorial [
-    //             dup 1 <=
-    //             [drop 1]
-    //             [dup 1 - factorial *]
-    //             if
-    //         ] end
-    //         5 factorial
-    //     "#;
-    //     assert_stack(code, vec![int(120)]);
-    // }
+    #[test]
+    fn word_recursive_factorial() {
+        let code = r#"
+            def factorial [
+                dup 1 <=
+                [drop 1]
+                [dup 1 - factorial *]
+                if
+            ] end
+            5 factorial
+        "#;
+        assert_stack(code, vec![int(120)]);
+    }
 
-    // #[test]
-    // fn word_recursive_fibonacci() {
-    //     let code = r#"
-    //         def fib [
-    //             dup 2 <
-    //             []
-    //             [dup 1 - fib swap 2 - fib +]
-    //             if
-    //         ] end
-    //         10 fib
-    //     "#;
-    //     assert_stack(code, vec![int(55)]);
-    // }
-    //
+    #[test]
+    fn word_recursive_fibonacci() {
+        let code = r#"
+            def fib [
+                dup 2 <
+                []
+                [dup 1 - fib swap 2 - fib +]
+                if
+            ] end
+            10 fib
+        "#;
+        assert_stack(code, vec![int(55)]);
+    }
+
     #[test]
     fn sum_of_squares() {
         // sum([1..5]^2) = 1+4+9+16+25 = 55
@@ -3694,23 +3689,24 @@ mod integration_tests {
         );
     }
 
-    // #[test]
-    // fn fizzbuzz_single() {
-    //     let code = r#"
-    //         def fizzbuzz [
-    //             dup 15 % 0 = ["FizzBuzz"] [
-    //                 dup 3 % 0 = ["Fizz"] [
-    //                     dup 5 % 0 = ["Buzz"] [
-    //                         dup to-string
-    //                     ] if
-    //                 ] if
-    //             ] if
-    //             swap drop
-    //         ]
-    //         15 fizzbuzz
-    //     "#;
-    //     assert_stack(code, vec![string("FizzBuzz")]);
-    // }
+    #[test]
+    fn fizzbuzz_single() {
+        let code = r#"
+            def fizzbuzz [
+                dup 15 % 0 = ["FizzBuzz"] [
+                    dup 3 % 0 = ["Fizz"] [
+                        dup 5 % 0 = ["Buzz"] [
+                            dup to-string
+                        ] if
+                    ] if
+                ] if
+                swap drop
+            ]
+            end
+            15 fizzbuzz
+        "#;
+        assert_stack(code, vec![string("FizzBuzz")]);
+    }
 
     #[test]
     fn list_operations_chain() {
@@ -3733,15 +3729,14 @@ mod integration_tests {
         );
     }
 
-    // #[test]
-    // fn accumulator_pattern() {
-    //     // Using fold to build a list of squares
-    //     assert_stack(
-    //         "{ 1 2 3 4 5 } { } [swap dup * swap append] fold",
-    //         vec![list(vec![int(1), int(4), int(9), int(16), int(25)])],
-    //     );
-    // }
-    //
+    #[test]
+    fn accumulator_pattern() {
+        assert_stack(
+            "{ 1 2 3 4 5 } { } [dup * append] fold",
+            vec![list(vec![int(1), int(4), int(9), int(16), int(25)])],
+        );
+    }
+
     #[test]
     fn error_stack_underflow() {
         assert_error("drop", "stack underflow");

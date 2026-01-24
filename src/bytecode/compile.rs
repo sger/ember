@@ -23,6 +23,7 @@ pub struct Compiler {
     aliases: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -403,11 +404,6 @@ impl Compiler {
 
             Node::Import(path) => {
                 return Err(CompileError::import_in_runtime(path));
-            }
-
-            // Catch-all for truly unhandled nodes
-            _ => {
-                return Err(CompileError::unhandled(node));
             }
         }
 

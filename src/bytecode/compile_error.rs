@@ -1,6 +1,7 @@
 use crate::lang::{node::Node, value::Value};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum CompileError {
     /// A node type that the compiler doesn't know how to handle
     UnhandledNode {
@@ -20,6 +21,7 @@ pub enum CompileError {
 
 impl CompileError {
     /// Create an error for an unhandled node type
+    #[allow(dead_code)]
     pub fn unhandled(node: &Node) -> Self {
         CompileError::UnhandledNode {
             node_type: node_type_name(node).to_string(),
@@ -31,6 +33,7 @@ impl CompileError {
     }
 
     /// Create an error for an unhandled node with custom hint
+    #[allow(dead_code)]
     pub fn unhandled_with_hint(node: &Node, hint: impl Into<String>) -> Self {
         CompileError::UnhandledNode {
             node_type: node_type_name(node).to_string(),
@@ -82,6 +85,7 @@ impl CompileError {
     }
 
     /// Create an internal compiler error
+    #[allow(dead_code)]
     pub fn internal(msg: impl Into<String>) -> Self {
         CompileError::Internal(msg.into())
     }

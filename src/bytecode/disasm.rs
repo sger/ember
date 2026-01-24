@@ -300,6 +300,7 @@ fn format_value(value: &Value) -> String {
 // =============================================================================
 
 /// Print compact disassembly (no stack comments)
+#[allow(dead_code)]
 pub fn print_bc_compact(bc: &ProgramBc) {
     println!("=== BYTECODE (compact) ===\n");
 
@@ -326,6 +327,7 @@ pub fn print_bc_compact(bc: &ProgramBc) {
 // =============================================================================
 
 /// Return disassembly as a String
+#[allow(dead_code)]
 pub fn disassemble_to_string(ops: &[Op]) -> String {
     let mut output = String::new();
     let jump_targets = collect_jump_targets(ops);
@@ -379,6 +381,7 @@ fn format_op_string(op: &Op, ip: usize) -> String {
 // =============================================================================
 
 /// Print bytecode statistics
+#[allow(dead_code)]
 pub fn print_bc_stats(bc: &ProgramBc) {
     println!("=== BYTECODE STATISTICS ===\n");
 

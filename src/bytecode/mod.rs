@@ -5,6 +5,5 @@ pub mod ir;
 pub mod op;
 pub mod stack_check_error;
 
-pub use compile_error::CompileError;
 pub use ir::{CodeObject, ProgramBc};
 pub use op::Op;

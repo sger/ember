@@ -14,6 +14,7 @@ pub struct ProgramBc {
 }
 
 impl ProgramBc {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             code: vec![CodeObject::new()],

@@ -9,7 +9,6 @@ use crate::bytecode::ProgramBc;
 use crate::bytecode::compile::Compiler;
 use crate::bytecode::disasm::print_bc;
 use crate::frontend::lexer::Lexer;
-use crate::frontend::parser::Parser;
 use crate::frontend::token_dumper::TokenDumper;
 use crate::runtime::vm_bc::VmBc;
 

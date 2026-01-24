@@ -1,5 +1,3 @@
-use std::ops;
-
 use crate::bytecode::Op;
 
 #[derive(Debug)]
@@ -54,8 +52,8 @@ fn effect(op: &Op) -> Option<(i32, i32)> {
         Call => (1, 0),
 
         // Combinators
-        Dip => (2, 0),     // ( a quot -- ... a ) - dynamic result
-        Keep => (2, 0),    // ( a quot -- ... a ) - dynamic result
+        Dip => (2, 0), // ( a quot -- ... a ) - dynamic result
+        // Keep => (2, 0),    // ( a quot -- ... a ) - dynamic result
         Bi => (3, 0),      // ( a p q -- ... ) - dynamic
         Bi2 => (4, 0),     // ( a b p q -- ... ) - dynamic
         Tri => (4, 0),     // ( a p q r -- ... ) - dynamic
@@ -63,6 +61,8 @@ fn effect(op: &Op) -> Option<(i32, i32)> {
         Compose => (2, 1), // ( quot quot -- quot )
         Curry => (2, 1),   // ( value quot -- quot )
         Apply => (2, 0),   // ( list quot -- ... ) - dynamic
+        // issue likely exists for other dynamic operations like Dip, Bi, Tri, Call, etc. They should all return None because their stack effects depend on the quotations they execute.
+        Keep => return None,
 
         // Loops & higher-order
         Times => (2, 0),

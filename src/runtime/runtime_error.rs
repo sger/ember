@@ -1,6 +1,3 @@
-// src/runtime/runtime_error.rs
-// Enhanced error reporting using your existing Span structure
-
 use crate::frontend::lexer::Span;
 use std::fmt;
 use std::path::PathBuf;
@@ -160,6 +157,7 @@ pub fn stack_underflow(expected: usize, actual: usize) -> RuntimeError {
     .with_help("Check that all operations have enough arguments on the stack")
 }
 
+#[allow(dead_code)]
 pub fn type_error(expected: &str, got: &str) -> RuntimeError {
     RuntimeError::new(&format!("type error: expected {}, got {}", expected, got)).with_help(
         format!(
