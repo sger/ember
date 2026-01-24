@@ -4,7 +4,8 @@ use crate::bytecode::stack_check_error::check_ops;
 use crate::frontend::lexer::Span;
 use crate::lang::value::Value;
 use crate::runtime::runtime_error::{
-    RuntimeError, division_by_zero, index_out_of_bounds, stack_underflow, undefined_word,
+    RuntimeError, RuntimeResult, division_by_zero, index_out_of_bounds, stack_underflow,
+    undefined_word,
 };
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
@@ -76,13 +77,14 @@ impl VmBc {
             .with_file(self.file.clone().unwrap_or_default())
     }
 
-    // NEW: Helper for type errors
-    fn type_error_with_context(&self, expected: &str, got: &str) -> RuntimeError {
+    // Helper for type errors
+    fn type_error_with_context(&self, expected: &str, got: &str) -> Box<RuntimeError> {
         self.error_with_context(format!("type error: expected {}, got {}", expected, got))
             .with_help(format!(
                 "This operation requires a {} value, but received a {}",
                 expected, got
             ))
+            .boxed()
     }
 
     #[allow(dead_code)]
@@ -96,14 +98,14 @@ impl VmBc {
         self.call_stack.clear();
     }
 
-    pub fn run_compiled(&mut self, prog: &ProgramBc) -> Result<(), RuntimeError> {
+    pub fn run_compiled(&mut self, prog: &ProgramBc) -> RuntimeResult<()> {
         self.reset_execution_state();
 
         self.words = prog.words.clone();
 
         let main = prog
             .code
-            .get(0)
+            .first()
             .ok_or_else(|| RuntimeError::new("bytecode program has no main code object"))?;
 
         check_ops(&main.ops).map_err(|e| RuntimeError::new(&e.message))?;
@@ -113,29 +115,29 @@ impl VmBc {
 
     // Execution
 
-    fn check_limits(&mut self) -> Result<(), RuntimeError> {
+    fn check_limits(&mut self) -> RuntimeResult<()> {
         self.steps += 1;
 
-        if let Some(max) = self.config.max_steps {
-            if self.steps > max {
-                return Err(RuntimeError::new(&format!(
-                    "execution step limit exceeded ({})",
-                    max
-                )));
-            }
+        if let Some(max) = self.config.max_steps
+            && self.steps > max
+        {
+            return Err(
+                RuntimeError::new(&format!("execution step limit exceeded ({})", max)).boxed(),
+            );
         }
 
         if self.stack.len() > self.config.max_stack_size {
             return Err(RuntimeError::new(&format!(
                 "stack size limit exceeded ({})",
                 self.config.max_stack_size
-            )));
+            ))
+            .boxed());
         }
 
         Ok(())
     }
 
-    fn exec_ops(&mut self, ops: &[Op]) -> Result<(), RuntimeError> {
+    fn exec_ops(&mut self, ops: &[Op]) -> RuntimeResult<()> {
         self.call_depth += 1;
 
         if self.call_depth > self.config.max_call_depth {
@@ -149,7 +151,8 @@ impl VmBc {
                 } else {
                     format!(" in '{}'", context)
                 }
-            )));
+            ))
+            .boxed());
         }
 
         let result = self.exec_ops_inner(ops);
@@ -158,7 +161,7 @@ impl VmBc {
         result
     }
 
-    fn exec_ops_inner(&mut self, ops: &[Op]) -> Result<(), RuntimeError> {
+    fn exec_ops_inner(&mut self, ops: &[Op]) -> RuntimeResult<()> {
         let mut ip: usize = 0;
 
         while ip < ops.len() {
@@ -219,7 +222,8 @@ impl VmBc {
                                     "Addition works on numbers, but got {} and {}",
                                     a.type_name(),
                                     b.type_name()
-                                )));
+                                ))
+                                .boxed());
                         }
                     };
                     self.push(result);
@@ -233,11 +237,13 @@ impl VmBc {
                         (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 - b),
                         (Value::Float(a), Value::Integer(b)) => Value::Float(a - *b as f64),
                         _ => {
-                            return Err(self.error_with_context(format!(
-                                "type error: cannot subtract {} from {}",
-                                b.type_name(),
-                                a.type_name()
-                            )));
+                            return Err(self
+                                .error_with_context(format!(
+                                    "type error: cannot subtract {} from {}",
+                                    b.type_name(),
+                                    a.type_name()
+                                ))
+                                .boxed());
                         }
                     };
                     self.push(result);
@@ -251,11 +257,13 @@ impl VmBc {
                         (Value::Integer(a), Value::Float(b)) => Value::Float(*a as f64 * b),
                         (Value::Float(a), Value::Integer(b)) => Value::Float(a * *b as f64),
                         _ => {
-                            return Err(self.error_with_context(format!(
-                                "type error: cannot multiply {} and {}",
-                                a.type_name(),
-                                b.type_name()
-                            )));
+                            return Err(self
+                                .error_with_context(format!(
+                                    "type error: cannot multiply {} and {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ))
+                                .boxed());
                         }
                     };
                     self.push(result);
@@ -268,7 +276,8 @@ impl VmBc {
                             if *b == 0 {
                                 return Err(division_by_zero()
                                     .with_source(self.source.clone().unwrap_or_default())
-                                    .with_file(self.file.clone().unwrap_or_default()));
+                                    .with_file(self.file.clone().unwrap_or_default())
+                                    .boxed());
                             }
                             Value::Integer(a / b)
                         }
@@ -276,7 +285,8 @@ impl VmBc {
                             if *b == 0.0 {
                                 return Err(division_by_zero()
                                     .with_source(self.source.clone().unwrap_or_default())
-                                    .with_file(self.file.clone().unwrap_or_default()));
+                                    .with_file(self.file.clone().unwrap_or_default())
+                                    .boxed());
                             }
                             Value::Float(a / b)
                         }
@@ -284,7 +294,8 @@ impl VmBc {
                             if *b == 0.0 {
                                 return Err(division_by_zero()
                                     .with_source(self.source.clone().unwrap_or_default())
-                                    .with_file(self.file.clone().unwrap_or_default()));
+                                    .with_file(self.file.clone().unwrap_or_default())
+                                    .boxed());
                             }
                             Value::Float(*a as f64 / b)
                         }
@@ -292,16 +303,19 @@ impl VmBc {
                             if *b == 0 {
                                 return Err(division_by_zero()
                                     .with_source(self.source.clone().unwrap_or_default())
-                                    .with_file(self.file.clone().unwrap_or_default()));
+                                    .with_file(self.file.clone().unwrap_or_default())
+                                    .boxed());
                             }
                             Value::Float(a / *b as f64)
                         }
                         _ => {
-                            return Err(self.error_with_context(format!(
-                                "type error: cannot divide {} by {}",
-                                a.type_name(),
-                                b.type_name()
-                            )));
+                            return Err(self
+                                .error_with_context(format!(
+                                    "type error: cannot divide {} by {}",
+                                    a.type_name(),
+                                    b.type_name()
+                                ))
+                                .boxed());
                         }
                     };
                     self.push(result);
@@ -312,7 +326,8 @@ impl VmBc {
                     if b == 0 {
                         return Err(self
                             .error_with_context("modulo by zero")
-                            .with_help("Check that the divisor is not zero"));
+                            .with_help("Check that the divisor is not zero")
+                            .boxed());
                     }
                     self.push(Value::Integer(a % b));
                 }
@@ -322,7 +337,9 @@ impl VmBc {
                         Value::Integer(n) => Value::Integer(-n),
                         Value::Float(n) => Value::Float(-n),
                         other => {
-                            return Err(RuntimeError::new(&format!("cannot negate {}", other)));
+                            return Err(
+                                RuntimeError::new(&format!("cannot negate {}", other)).boxed()
+                            );
                         }
                     };
                     self.push(result);
@@ -332,7 +349,9 @@ impl VmBc {
                     let result = match a {
                         Value::Integer(n) => Value::Integer(n.abs()),
                         Value::Float(n) => Value::Float(n.abs()),
-                        other => return Err(RuntimeError::new(&format!("cannot abs {}", other))),
+                        other => {
+                            return Err(RuntimeError::new(&format!("cannot abs {}", other)).boxed());
+                        }
                     };
                     self.push(result);
                 }
@@ -399,21 +418,21 @@ impl VmBc {
                                 ))
                                 .with_help(
                                     "Use 'len' on lists or strings. Example: \"hello\" len  or  { 1 2 3 } len"
-                                ));
+                                ).boxed());
                         }
                     }
                 }
                 Op::Head => {
                     let list = self.pop_list()?;
                     if list.is_empty() {
-                        return Err(RuntimeError::new("head of empty list"));
+                        return Err(RuntimeError::new("head of empty list").boxed());
                     }
                     self.push(list[0].clone());
                 }
                 Op::Tail => {
                     let list = self.pop_list()?;
                     if list.is_empty() {
-                        return Err(RuntimeError::new("tail of empty list"));
+                        return Err(RuntimeError::new("tail of empty list").boxed());
                     }
                     self.push(Value::List(list[1..].to_vec()));
                 }
@@ -483,7 +502,8 @@ impl VmBc {
                     if exp < 0 {
                         return Err(RuntimeError::new(
                             "negative exponent not supported for integer power",
-                        ));
+                        )
+                        .boxed());
                     }
                     let result = base
                         .checked_pow(exp as u32)
@@ -497,7 +517,8 @@ impl VmBc {
                             if n < 0 {
                                 return Err(RuntimeError::new(
                                     "cannot take square root of negative number",
-                                ));
+                                )
+                                .boxed());
                             }
                             self.push(Value::Float((n as f64).sqrt()));
                         }
@@ -505,7 +526,8 @@ impl VmBc {
                             if n < 0.0 {
                                 return Err(RuntimeError::new(
                                     "cannot take square root of negative number",
-                                ));
+                                )
+                                .boxed());
                             }
                             self.push(Value::Float(n.sqrt()));
                         }
@@ -513,7 +535,8 @@ impl VmBc {
                             return Err(RuntimeError::new(&format!(
                                 "cannot take sqrt of {}",
                                 other
-                            )));
+                            ))
+                            .boxed());
                         }
                     }
                 }
@@ -524,7 +547,8 @@ impl VmBc {
                     if idx < 0 || idx as usize >= list.len() {
                         return Err(index_out_of_bounds(idx, list.len())
                             .with_source(self.source.clone().unwrap_or_default())
-                            .with_file(self.file.clone().unwrap_or_default()));
+                            .with_file(self.file.clone().unwrap_or_default())
+                            .boxed());
                     }
 
                     self.push(list[idx as usize].clone());
@@ -628,7 +652,8 @@ impl VmBc {
                             return Err(RuntimeError::new(&format!(
                                 "cannot convert {} to integer",
                                 other
-                            )));
+                            ))
+                            .boxed());
                         }
                     }
                 }
@@ -640,7 +665,8 @@ impl VmBc {
                         return Err(RuntimeError::new(&format!(
                             "jump out of bounds: ip={}, offset={}, target={}",
                             ip, offset, new_ip
-                        )));
+                        ))
+                        .boxed());
                     }
                     ip = new_ip as usize;
                     continue;
@@ -654,7 +680,8 @@ impl VmBc {
                             return Err(RuntimeError::new(&format!(
                                 "jump out of bounds: ip={}, offset={}, target={}",
                                 ip, offset, new_ip
-                            )));
+                            ))
+                            .boxed());
                         }
                         ip = new_ip as usize;
                         continue;
@@ -669,7 +696,8 @@ impl VmBc {
                             return Err(RuntimeError::new(&format!(
                                 "jump out of bounds: ip={}, offset={}, target={}",
                                 ip, offset, new_ip
-                            )));
+                            ))
+                            .boxed());
                         }
                         ip = new_ip as usize;
                         continue;
@@ -788,7 +816,7 @@ impl VmBc {
                     let body = self.pop_quotation_ops()?;
                     let n = self.pop_int()?;
                     if n < 0 {
-                        return Err(RuntimeError::new("times expects non-negative integer"));
+                        return Err(RuntimeError::new("times expects non-negative integer").boxed());
                     }
                     for _ in 0..n {
                         self.exec_ops(&body)?;
@@ -845,7 +873,8 @@ impl VmBc {
                         return Err(RuntimeError::new(&format!(
                             "range: start ({}) cannot be greater than end ({})",
                             start, end
-                        )));
+                        ))
+                        .boxed());
                     }
                     let list: Vec<Value> = (start..end).map(Value::Integer).collect();
                     self.push(Value::List(list));
@@ -859,6 +888,7 @@ impl VmBc {
                         undefined_word(name)
                             .with_source(self.source.clone().unwrap_or_default())
                             .with_file(self.file.clone().unwrap_or_default())
+                            .boxed()
                     })?;
 
                     let result = self.exec_ops(&ops);
@@ -866,7 +896,7 @@ impl VmBc {
 
                     result.map_err(|e| {
                         if e.call_stack.is_empty() {
-                            e.with_context(name)
+                            (*e).with_context(name).boxed()
                         } else {
                             e
                         }
@@ -912,70 +942,65 @@ impl VmBc {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Result<Value, RuntimeError> {
+    fn pop(&mut self) -> RuntimeResult<Value> {
         self.stack.pop().ok_or_else(|| {
             stack_underflow(1, 0)
                 .with_source(self.source.clone().unwrap_or_default())
                 .with_file(self.file.clone().unwrap_or_default())
+                .boxed()
         })
     }
 
-    fn pop_int(&mut self) -> Result<i64, RuntimeError> {
-        match self.pop()? {
+    fn pop_int(&mut self) -> RuntimeResult<i64> {
+        match self.pop().map_err(|e| e.boxed())? {
             Value::Integer(n) => Ok(n),
             other => Err(self.type_error_with_context("integer", other.type_name())),
         }
     }
 
-    fn pop_two_numeric(&mut self) -> Result<(f64, f64), RuntimeError> {
+    fn pop_two_numeric(&mut self) -> RuntimeResult<(f64, f64)> {
         let b = self.pop()?;
         let a = self.pop()?;
         let b_f = match &b {
             Value::Integer(n) => *n as f64,
             Value::Float(n) => *n,
             other => {
-                return Err(RuntimeError::new(&format!(
-                    "expected number, got {}",
-                    other
-                )));
+                return Err(RuntimeError::new(&format!("expected number, got {}", other)).boxed());
             }
         };
         let a_f = match &a {
             Value::Integer(n) => *n as f64,
             Value::Float(n) => *n,
             other => {
-                return Err(RuntimeError::new(&format!(
-                    "expected number, got {}",
-                    other
-                )));
+                return Err(RuntimeError::new(&format!("expected number, got {}", other)).boxed());
             }
         };
 
         Ok((b_f, a_f))
     }
 
-    fn pop_bool(&mut self) -> Result<bool, RuntimeError> {
+    fn pop_bool(&mut self) -> RuntimeResult<bool> {
         match self.pop()? {
             Value::Bool(b) => Ok(b),
             other => Err(self.type_error_with_context("boolean", other.type_name())),
         }
     }
 
-    fn pop_list(&mut self) -> Result<Vec<Value>, RuntimeError> {
+    fn pop_list(&mut self) -> RuntimeResult<Vec<Value>> {
         match self.pop()? {
             Value::List(items) => Ok(items),
             other => Err(self.type_error_with_context("list", other.type_name())),
         }
     }
 
-    fn pop_string(&mut self) -> Result<String, RuntimeError> {
+    fn pop_string(&mut self) -> RuntimeResult<String> {
         match self.pop()? {
             Value::String(s) => Ok(s),
             other => Err(self.type_error_with_context("string", other.type_name())),
         }
     }
 
-    fn pop_quotation_ops(&mut self) -> Result<Vec<Op>, RuntimeError> {
+    fn pop_quotation_ops(&mut self) -> RuntimeResult<Vec<Op>> {
         match self.pop()? {
             Value::CompiledQuotation(ops) => Ok(ops),
             other => Err(self.type_error_with_context("quotation", other.type_name())),
@@ -983,6 +1008,8 @@ impl VmBc {
     }
 }
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::approx_constant)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1012,7 +1039,7 @@ mod tests {
     }
 
     /// Run ops and return the resulting stack
-    fn run_ops(ops: Vec<Op>) -> Result<Vec<Value>, RuntimeError> {
+    fn run_ops(ops: Vec<Op>) -> RuntimeResult<Vec<Value>> {
         let mut vm = VmBc::new();
         let prog = program_from_ops(ops);
         vm.run_compiled(&prog)?;
@@ -1020,7 +1047,7 @@ mod tests {
     }
 
     /// Run ops with custom config
-    fn run_ops_with_config(ops: Vec<Op>, config: VmBcConfig) -> Result<Vec<Value>, RuntimeError> {
+    fn run_ops_with_config(ops: Vec<Op>, config: VmBcConfig) -> RuntimeResult<Vec<Value>> {
         let mut vm = VmBc::with_config(config);
         let prog = program_from_ops(ops);
         vm.run_compiled(&prog)?;
@@ -2862,6 +2889,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod integration_tests {
     use crate::bytecode::Op;
     use crate::bytecode::compile::Compiler;
@@ -2870,7 +2898,7 @@ mod integration_tests {
     use crate::lang::node::Node;
     use crate::lang::program::Program;
     use crate::lang::value::Value;
-    use crate::runtime::runtime_error::RuntimeError;
+    use crate::runtime::runtime_error::{RuntimeError, RuntimeResult};
     use crate::runtime::vm_bc::VmBc;
 
     /// Run EMBER source code and return the resulting stack
@@ -2879,15 +2907,14 @@ mod integration_tests {
     }
 
     /// Run EMBER source code and return Result with stack or error
-    fn run(source: &str) -> Result<Vec<Value>, RuntimeError> {
+    #[allow(clippy::result_large_err)]
+    fn run(source: &str) -> RuntimeResult<Vec<Value>> {
         let tokens = Lexer::new(source)
             .tokenize()
             .map_err(|e| RuntimeError::new(&format!("Lexer error: {:?}", e)))?;
         let ast = Parser::new(tokens)
             .parse()
             .map_err(|e| RuntimeError::new(&format!("Parser error: {:?}", e)))?;
-        // let program = Compiler::new()
-        //     .compile(&ast)
         let program = Compiler::new()
             .compile_program(&ast)
             .map_err(|e| RuntimeError::new(&format!("Compiler error: {:?}", e)))?;

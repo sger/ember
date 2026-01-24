@@ -104,7 +104,7 @@ impl Compiler {
 
         // Canonicalize to absolute path
         let canonical = path_buf.canonicalize().map_err(|e| {
-            CompileError::new(&format!("cannot find file '{}': {}", path.display(), e))
+            CompileError::new(format!("cannot find file '{}': {}", path.display(), e))
         })?;
 
         // Already included? Skip (prevents infinite loops and duplicate definitions)
@@ -119,18 +119,18 @@ impl Compiler {
 
         // Read and parse
         let source = std::fs::read_to_string(&canonical).map_err(|e| {
-            CompileError::new(&format!("cannot read '{}': {}", canonical.display(), e))
+            CompileError::new(format!("cannot read '{}': {}", canonical.display(), e))
         })?;
 
         let mut lexer = Lexer::new(&source);
         let tokens = lexer
             .tokenize()
-            .map_err(|e| CompileError::new(&format!("in '{}': {}", canonical.display(), e)))?;
+            .map_err(|e| CompileError::new(format!("in '{}': {}", canonical.display(), e)))?;
 
         let mut parser = Parser::new(tokens);
         let program = parser
             .parse()
-            .map_err(|e| CompileError::new(&format!("in '{}': {}", canonical.display(), e)))?;
+            .map_err(|e| CompileError::new(format!("in '{}': {}", canonical.display(), e)))?;
 
         // Process imports FIRST (depth-first, like Forth INCLUDE)
         for def in &program.definitions {
@@ -640,6 +640,7 @@ impl Compiler {
     /// Note: This generates the loop structure WITHOUT the initial counter push.
     /// The caller is responsible for ensuring the counter is on the stack.
     /// #[allow(dead_code)]
+    #[allow(clippy::vec_init_then_push)]
     pub fn compile_times_jumps(&mut self, loop_body: &[Node]) -> Result<Vec<Op>, CompileError> {
         let body_ops = self.compile_nodes(loop_body)?;
         let body_len = body_ops.len() as i32;

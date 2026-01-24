@@ -2,6 +2,10 @@ use crate::frontend::lexer::Span;
 use std::fmt;
 use std::path::PathBuf;
 
+/// Type alias for Result with a boxed RuntimeError.
+/// This keeps the Result size small (pointer-sized error variant).
+pub type RuntimeResult<T> = Result<T, Box<RuntimeError>>;
+
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
@@ -22,6 +26,10 @@ impl RuntimeError {
             call_stack: Vec::new(),
             help: None,
         }
+    }
+
+    pub fn boxed(self) -> Box<Self> {
+        Box::new(self)
     }
 
     pub fn with_span(mut self, span: Span) -> Self {
