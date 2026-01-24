@@ -8,7 +8,7 @@ It is designed to be **simple to compile**, **easy to reason about**, and **fun 
 
 ---
 
-## ✨ Features
+## Features
 
 - Stack-based execution model
 - Concatenative syntax (everything is a word)
@@ -22,7 +22,7 @@ It is designed to be **simple to compile**, **easy to reason about**, and **fun 
 
 ---
 
-## 🚀 Example
+## Example
 
 ```ember
 def gcd
@@ -35,6 +35,45 @@ def gcd
 end
 
 48 18 gcd print   ; => 6
+```
+
+```
+Compiling examples/gcd.em...
+✓ Compiled 1 words
+
+=== BYTECODE PROGRAM ===
+
+════════════════════════════════════════
+ main
+ 5 instructions
+════════════════════════════════════════
+0000   PUSH        48
+0001   PUSH        18
+0002   CALL_WORD   "gcd"
+0003   PRINT       ; ( value -- )
+0004   RETURN
+
+════════════════════════════════════════
+ gcd
+ 11 instructions
+════════════════════════════════════════
+0000   DUP
+0001   PUSH        0
+0002   EQ
+0003   JUMP_FALSE  +3 ↓ (→ 0006)
+0004   DROP
+0005   JUMP        +5 ↓ (→ 0010)
+      ┌──────────────────────────────────
+0006 ► SWAP
+0007   OVER
+0008   MOD
+0009   CALL_WORD   "gcd"
+      ┌──────────────────────────────────
+0010 ► RETURN
+
+
+Executing...
+6
 ```
 
 ---
